@@ -22,6 +22,7 @@
 #import "CBLDatabase+Replication.h"
 #import "CBLView+Internal.h"
 #import "CBL_Body.h"
+#import "CBL_Attachment.h"
 #import "CBLMultipartDocumentReader.h"
 #import "CBL_Revision.h"
 #import "CBLDatabaseChange.h"
@@ -765,43 +766,40 @@ static NSArray* parseJSONRevArrayQuery(NSString* queryStr) {
     if ([self cacheWithEtag: rev.revID])        // set ETag and check conditional GET
         return kCBLStatusNotModified;
     
-    NSString* type = nil;
-    CBLAttachmentEncoding encoding = kCBLAttachmentEncodingNone;
-    NSString* acceptEncoding = [_request valueForHTTPHeaderField: @"Accept-Encoding"];
-    BOOL acceptEncoded = (acceptEncoding
-                          && [acceptEncoding rangeOfString: @"gzip"].length > 0
-                          && [_request valueForHTTPHeaderField: @"Range"] == nil);
+    CBL_Attachment* attachmentObj = [_db attachmentForSequence: rev.sequence named: attachment
+                                                        status: &status];
+    if (!attachmentObj)
+        return status;
+
+    CBLAttachmentEncoding encoding = attachmentObj->encoding;
+    if (encoding) {
+        NSString* acceptEncoding = [_request valueForHTTPHeaderField: @"Accept-Encoding"];
+        BOOL acceptEncoded = (acceptEncoding
+                              && [acceptEncoding rangeOfString: @"gzip"].length > 0
+                              && [_request valueForHTTPHeaderField: @"Range"] == nil);
+        if (!acceptEncoded)
+            encoding = kCBLAttachmentEncodingNone;
+    }
 
     if ($equal(_request.HTTPMethod, @"HEAD")) {
-        NSString* filePath = [_db getAttachmentPathForSequence: rev.sequence
-                                                         named: attachment
-                                                          type: &type
-                                                      encoding: &encoding
-                                                        status: &status];
-        if (!filePath)
-            return status;
         if (_local) {
             // Let in-app clients know the location of the attachment file:
-            _response[@"Location"] = [[NSURL fileURLWithPath: filePath] absoluteString];
+            NSString* filePath = attachmentObj.contentFilePath;
+            if (filePath)
+                _response[@"Location"] = [[NSURL fileURLWithPath: filePath] absoluteString];
         }
-        UInt64 size = [[[NSFileManager defaultManager] attributesOfItemAtPath: filePath
-                                                                          error: nil]
-                                    fileSize];
-        if (size)
-            _response[@"Content-Length"] = $sprintf(@"%llu", size);
-        
+        UInt64 length = attachmentObj->length;
+        if (length > 0)
+            _response[@"Content-Length"] = $sprintf(@"%llu", length);
+
     } else {
-        NSData* contents = [_db getAttachmentForSequence: rev.sequence
-                                                   named: attachment
-                                                    type: &type
-                                                encoding: (acceptEncoded ? &encoding : NULL)
-                                                  status: &status];
+        NSData* contents = encoding ? attachmentObj.encodedContent : attachmentObj.content;
         if (!contents)
-            return status;
+            return kCBLStatusAttachmentNotFound;
         _response.body = [CBL_Body bodyWithJSON: contents];   //FIX: This is a lie, it's not JSON
     }
-    if (type)
-        _response[@"Content-Type"] = type;
+    if (attachmentObj.contentType)
+        _response[@"Content-Type"] = attachmentObj.contentType;
     if (encoding == kCBLAttachmentEncodingGZIP)
         _response[@"Content-Encoding"] = @"gzip";
     return kCBLStatusOK;

@@ -18,6 +18,7 @@
 
 #import "CBLDatabase+Attachments.h"
 #import "CBL_BlobStore.h"
+#import "CBL_Attachment.h"
 #import "CBLInternal.h"
 
 
@@ -100,6 +101,16 @@
 #pragma mark - BODY
 
 
+- (CBL_Attachment*) _internalAttachment {
+    if (_rev.sequence == 0)
+        return nil;
+    CBLStatus status;
+    return [_rev.database attachmentForSequence: _rev.sequence
+                                          named: _name
+                                         status: &status];
+}
+
+
 - (NSData*) bodyIfNew {
     return _body ? self.content : nil;
 }
@@ -114,12 +125,8 @@
                                          options: NSDataReadingMappedIfSafe | NSDataReadingUncached
                                            error: nil];
         }
-    } else if (_rev.sequence > 0) {
-        CBLStatus status;
-        return [_rev.database getAttachmentForSequence: _rev.sequence
-                                                      named: _name
-                                                       type: NULL encoding: NULL
-                                                     status: &status];
+    } else {
+        return self._internalAttachment.content;
     }
     return nil;
 }
@@ -129,14 +136,24 @@
     if (_body) {
         if ([_body isKindOfClass: [NSURL class]] && [_body isFileURL])
             return _body;
-    } else if (_rev.sequence > 0) {
-        CBLStatus status;
-        NSString* path = [_rev.database getAttachmentPathForSequence: _rev.sequence
-                                                                    named: _name
-                                                                     type: NULL encoding: NULL
-                                                                   status: &status];
+    } else {
+        NSString* path = self._internalAttachment.contentFilePath;
         if (path)
             return [NSURL fileURLWithPath: path];
+    }
+    return nil;
+}
+
+
+- (NSInputStream*) contentStream {
+    if (_body) {
+        if ([_body isKindOfClass: [NSData class]])
+            return [NSInputStream inputStreamWithData: _body];
+        else if ([_body isKindOfClass: [NSURL class]] && [_body isFileURL]) {
+            return [NSInputStream inputStreamWithURL: _body];
+        }
+    } else {
+        return self._internalAttachment.contentStream;
     }
     return nil;
 }

@@ -22,6 +22,7 @@
 #import "CBLRevision.h"
 #import "CBLOAuth1Authorizer.h"
 #import "CBLBase64.h"
+#import "CBLSymmetricKey.h"
 #import "CBLInternal.h"
 #import "Test.h"
 #import "MYURLUtils.h"
@@ -473,25 +474,31 @@ TestCase(CBL_Puller_FromCouchApp) {
         return;
     }
 
-    CBLManager* server = [CBLManager createEmptyAtTemporaryPath: @"CBL_Puller_FromCouchApp"];
-    CBLDatabase* db = [server databaseNamed: kCouchAppDBName error: NULL];
-    CAssert(db);
-    
-    replic8(db, remote, NO, nil, nil);
+    for (int encrypted=0; encrypted <= 1; ++encrypted) {
+        CBLManager* server = [CBLManager createEmptyAtTemporaryPath: @"CBL_Puller_FromCouchApp"];
+        CBLDatabase* db = [server databaseNamed: kCouchAppDBName error: NULL];
+        CAssert(db);
+        if (encrypted) {
+            Log(@"*** Now enabling attachment encryption ***");
+            db.attachmentStore.encryptionKey = [[CBLSymmetricKey alloc] init];
+        }
+        
+        replic8(db, remote, NO, nil, nil);
 
-    CBLStatus status;
-    CBL_Revision* rev = [db getDocumentWithID: @"_design/helloworld" revisionID: nil options: kCBLIncludeAttachments status: &status];
-    NSDictionary* attachments = rev[@"_attachments"];
-    CAssertEq(attachments.count, 10u);
-    for (NSString* name in attachments) { 
-        NSDictionary* attachment = attachments[name];
-        NSData* data = [CBLBase64 decode: attachment[@"data"]];
-        Log(@"Attachment %@: %u bytes", name, (unsigned)data.length);
-        CAssert(data);
-        CAssertEq([data length], [attachment[@"length"] unsignedLongLongValue]);
+        CBLStatus status;
+        CBL_Revision* rev = [db getDocumentWithID: @"_design/helloworld" revisionID: nil options: kCBLIncludeAttachments status: &status];
+        NSDictionary* attachments = rev[@"_attachments"];
+        CAssertEq(attachments.count, 10u);
+        for (NSString* name in attachments) { 
+            NSDictionary* attachment = attachments[name];
+            NSData* data = [CBLBase64 decode: attachment[@"data"]];
+            Log(@"Attachment %@: %u bytes", name, (unsigned)data.length);
+            CAssert(data);
+            CAssertEq([data length], [attachment[@"length"] unsignedLongLongValue]);
+        }
+        [db close];
+        [server close];
     }
-    [db close];
-    [server close];
 }
 
 

@@ -29,9 +29,16 @@
 
 - (instancetype) initWithName: (NSString*)name contentType: (NSString*)contentType;
 
+@property (readonly) bool isValid;
+
 @property (readonly, nonatomic) NSString* name;
 @property (readonly, nonatomic) NSString* contentType;
 
-@property (readonly) bool isValid;
+@property CBL_BlobStore* blobStore;
+
+@property (readonly) NSData* content;
+@property (readonly) NSData* encodedContent;
+@property (readonly) NSInputStream* contentStream;
+@property (readonly) NSString* contentFilePath;  // nil if the content is encrypted on disk
 
 @end

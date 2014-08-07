@@ -18,6 +18,7 @@
 #import "CBLDatabase+Insertion.h"
 #import "CBL_Revision.h"
 #import "CBLDatabaseChange.h"
+#import "CBL_Attachment.h"
 #import "CBLBatcher.h"
 #import "CBLMultipartUploader.h"
 #import "CouchbaseLitePrivate.h"
@@ -415,7 +416,9 @@ CBLStatus CBLStatusFromBulkDocsResponseItem(NSDictionary* item) {
             [bodyStream setNextPartsHeaders: $dict({@"Content-Disposition", disposition},
                                                    {@"Content-Type", contentType},
                                                    {@"Content-Encoding", contentEncoding})];
-            [bodyStream addFileURL: [_db fileForAttachmentDict: attachment]];
+            CBL_Attachment* attachmentObj = [_db attachmentForDict: attachment
+                                                             named: attachmentName];
+            [bodyStream addStream: [attachmentObj contentStream]];
         }
     }
     if (!bodyStream)

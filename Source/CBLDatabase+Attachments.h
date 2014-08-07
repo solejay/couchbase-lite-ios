@@ -7,7 +7,8 @@
 //
 
 #import "CBLDatabase+Internal.h"
-@class CBL_BlobStoreWriter, CBL_Revision, CBLMultipartWriter;
+#import "CBL_BlobStore.h"
+@class CBL_Revision, CBL_Attachment, CBLMultipartWriter;
 
 
 /** Types of encoding/compression of stored attachments. */
@@ -55,23 +56,16 @@ typedef enum {
 - (CBLMultipartWriter*) multipartWriterForRevision: (CBL_Revision*)rev
                                       contentType: (NSString*)contentType;
 
-/** Returns the content and metadata of an attachment.
-    If you pass NULL for the 'outEncoding' parameter, it signifies that you don't care about encodings and just want the 'real' data, so it'll be decoded for you. */
-- (NSData*) getAttachmentForSequence: (SequenceNumber)sequence
-                               named: (NSString*)filename
-                                type: (NSString**)outType
-                            encoding: (CBLAttachmentEncoding*)outEncoding
-                              status: (CBLStatus*)outStatus;
+- (CBL_Attachment*) attachmentForSequence: (SequenceNumber)sequence
+                                    named: (NSString*)filename
+                                   status: (CBLStatus*)outStatus;
 
-/** Returns the location of an attachment's file in the blob store. */
-- (NSString*) getAttachmentPathForSequence: (SequenceNumber)sequence
-                                     named: (NSString*)filename
-                                      type: (NSString**)outType
-                                  encoding: (CBLAttachmentEncoding*)outEncoding
-                                    status: (CBLStatus*)outStatus;
+/** Uses the "digest" field of the attachment dict to look up the attachment in the store.
+    Input dict must come from an already-saved revision. */
+- (CBL_Attachment*) attachmentForDict: (NSDictionary*)attachInfo
+                                named: (NSString*)name;
 
-/** Uses the "digest" field of the attachment dict to look up the attachment in the store and return a file URL to it. DO NOT MODIFY THIS FILE! */
-- (NSURL*) fileForAttachmentDict: (NSDictionary*)attachmentDict;
+- (NSString*) pathForPendingAttachmentWithDict: (NSDictionary*)attachInfo;
 
 /** Deletes obsolete attachments from the database and blob store. */
 - (CBLStatus) garbageCollectAttachments;

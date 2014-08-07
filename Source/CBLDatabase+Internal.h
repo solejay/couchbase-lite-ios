@@ -101,7 +101,7 @@ extern const CBLChangesOptions kDefaultCBLChangesOptions;
                       readOnly: (BOOL)readOnly;
 + (BOOL) deleteDatabaseFilesAtPath: (NSString*)dbPath error: (NSError**)outError;
 #if DEBUG
-+ (instancetype) createEmptyDBAtPath: (NSString*)path;
++ (instancetype) createEmptyDBAtPath: (NSString*)path error: (NSError**)outError;
 #endif
 - (BOOL) openFMDB: (NSError**)outError;
 - (BOOL) open: (NSError**)outError;

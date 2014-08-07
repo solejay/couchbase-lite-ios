@@ -407,6 +407,9 @@
 		27A82E3614A1145000C0B850 /* FMDatabaseAdditions.h in Headers */ = {isa = PBXBuildFile; fileRef = 27A82E3414A1145000C0B850 /* FMDatabaseAdditions.h */; };
 		27A82E3814A1145000C0B850 /* FMDatabaseAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = 27A82E3514A1145000C0B850 /* FMDatabaseAdditions.m */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
 		27A82E3914A1145000C0B850 /* FMDatabaseAdditions.m in Sources */ = {isa = PBXBuildFile; fileRef = 27A82E3514A1145000C0B850 /* FMDatabaseAdditions.m */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		27A8A69C1991B148004FBC61 /* CBLSymmetricKey.h in Headers */ = {isa = PBXBuildFile; fileRef = 27A8A69A1991B148004FBC61 /* CBLSymmetricKey.h */; };
+		27A8A69D1991B148004FBC61 /* CBLSymmetricKey.m in Sources */ = {isa = PBXBuildFile; fileRef = 27A8A69B1991B148004FBC61 /* CBLSymmetricKey.m */; };
+		27A8A69E1991B148004FBC61 /* CBLSymmetricKey.m in Sources */ = {isa = PBXBuildFile; fileRef = 27A8A69B1991B148004FBC61 /* CBLSymmetricKey.m */; };
 		27A98EA517BEDC9900943528 /* ReplicationAPITests.m in Sources */ = {isa = PBXBuildFile; fileRef = 27A98EA317BEDC9900943528 /* ReplicationAPITests.m */; };
 		27AA409D14AA86AE00E2A5FF /* CBLDatabase+Insertion.m in Sources */ = {isa = PBXBuildFile; fileRef = 27AA409A14AA86AD00E2A5FF /* CBLDatabase+Insertion.m */; };
 		27AA409E14AA86AE00E2A5FF /* CBLDatabase+Insertion.m in Sources */ = {isa = PBXBuildFile; fileRef = 27AA409A14AA86AD00E2A5FF /* CBLDatabase+Insertion.m */; };
@@ -1179,6 +1182,8 @@
 		27A7209F152B959100C0A0E8 /* CBL_Attachment.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CBL_Attachment.m; sourceTree = "<group>"; };
 		27A82E3414A1145000C0B850 /* FMDatabaseAdditions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = FMDatabaseAdditions.h; sourceTree = "<group>"; };
 		27A82E3514A1145000C0B850 /* FMDatabaseAdditions.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = FMDatabaseAdditions.m; sourceTree = "<group>"; };
+		27A8A69A1991B148004FBC61 /* CBLSymmetricKey.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLSymmetricKey.h; sourceTree = "<group>"; };
+		27A8A69B1991B148004FBC61 /* CBLSymmetricKey.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CBLSymmetricKey.m; sourceTree = "<group>"; };
 		27A98EA317BEDC9900943528 /* ReplicationAPITests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = ReplicationAPITests.m; sourceTree = "<group>"; };
 		27AA409A14AA86AD00E2A5FF /* CBLDatabase+Insertion.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "CBLDatabase+Insertion.m"; sourceTree = "<group>"; };
 		27AA40A014AA8A6600E2A5FF /* CBLDatabase+Replication.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "CBLDatabase+Replication.m"; sourceTree = "<group>"; };
@@ -2094,6 +2099,8 @@
 				27DA4307158FA35600F9E7B5 /* CBLCache.m */,
 				27A073EA14C0BB6200F52FE7 /* CBLMisc.h */,
 				27A073EB14C0BB6200F52FE7 /* CBLMisc.m */,
+				27A8A69A1991B148004FBC61 /* CBLSymmetricKey.h */,
+				27A8A69B1991B148004FBC61 /* CBLSymmetricKey.m */,
 				270B3DEE1489359000E0A926 /* CouchbaseLite-Info.plist */,
 				27821BBD14906FB50099B373 /* CouchbaseLitePrefix.h */,
 				27821BBF149078C70099B373 /* CouchbaseLite.exp */,
@@ -2495,6 +2502,7 @@
 				2753158214ACEFC90065964D /* HTTPLogging.h in Headers */,
 				2753158414ACEFC90065964D /* HTTPMessage.h in Headers */,
 				2753158814ACEFC90065964D /* HTTPResponse.h in Headers */,
+				27A8A69C1991B148004FBC61 /* CBLSymmetricKey.h in Headers */,
 				2753158A14ACEFC90065964D /* HTTPServer.h in Headers */,
 				27B945B217692E2000B2DF2D /* CBLModel_Internal.h in Headers */,
 				2753158E14ACEFC90065964D /* HTTPAsyncFileResponse.h in Headers */,
@@ -3199,6 +3207,7 @@
 				272401B81860CB4B0080E082 /* WebSocketClient.m in Sources */,
 				277B5D301821A8380088881E /* yajl_buf.c in Sources */,
 				2733023018F86C9800A488F7 /* CBLTokenAuthorizer.m in Sources */,
+				27A8A69D1991B148004FBC61 /* CBLSymmetricKey.m in Sources */,
 				276F25FC18A3386100A70679 /* DDData.m in Sources */,
 				277B5D291821A8380088881E /* yajl.c in Sources */,
 				277B5D341821A8380088881E /* yajl_encode.c in Sources */,
@@ -3434,6 +3443,7 @@
 				277EF44B17F4DF3700F7B7F7 /* stem_ISO_8859_1_portuguese.c in Sources */,
 				277EF43617F4DF3700F7B7F7 /* stem_ISO_8859_1_finnish.c in Sources */,
 				277EF45117F4DF3700F7B7F7 /* stem_ISO_8859_1_swedish.c in Sources */,
+				27A8A69E1991B148004FBC61 /* CBLSymmetricKey.m in Sources */,
 				277EF44517F4DF3700F7B7F7 /* stem_ISO_8859_1_norwegian.c in Sources */,
 				277EF41917F4DF3700F7B7F7 /* libstemmer_utf8.c in Sources */,
 				277EF47217F4DF3700F7B7F7 /* stem_UTF_8_norwegian.c in Sources */,

@@ -25,7 +25,11 @@
 #if DEBUG
 
 static CBLDatabase* createDB(void) {
-    return [CBLDatabase createEmptyDBAtPath: [NSTemporaryDirectory() stringByAppendingPathComponent: @"CouchbaseLite_ViewTest.touchdb"]];
+    NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent: @"CouchbaseLite_ViewTest.cblite"];
+    NSError* error;
+    CBLDatabase* db = [CBLDatabase createEmptyDBAtPath: path error: &error];
+    Assert(db, @"Couldn't create empty db: %@", error);
+    return db;
 }
 
 TestCase(CBL_View_Create) {

@@ -30,6 +30,7 @@
 #import "CBLOAuth1Authorizer.h"
 #import "CBL_Shared.h"
 #import "CBLInternal.h"
+#import "CBLSymmetricKey.h"
 #import "CBLMisc.h"
 #import "CBLStatus.h"
 #import "MYBlockUtils.h"
@@ -411,10 +412,17 @@ static CBLManager* sInstance;
     return db;
 }
 
-- (void) registerEncryptionKey: (id)encryptionKey
+- (void) registerEncryptionKey: (id)keyOrPassword
               forDatabaseNamed: (NSString*)name
 {
-    [self.shared setValue: encryptionKey
+    CBLSymmetricKey* realKey = nil;
+    if ([keyOrPassword isKindOfClass: [NSString class]]) {
+        realKey = [[CBLSymmetricKey alloc] initWithPassword: keyOrPassword];
+    } else if (keyOrPassword) {
+        Assert([keyOrPassword isKindOfClass: [NSData class]]);
+        realKey = [[CBLSymmetricKey alloc] initWithKeyData: keyOrPassword];
+    }
+    [self.shared setValue: realKey
                   forType: @"encryptionKey" name: @""
           inDatabaseNamed: name];
 }

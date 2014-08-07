@@ -14,12 +14,13 @@
 //  and limitations under the License.
 
 #import "CBL_Attachment.h"
+#import "GTMNSData+zlib.h"
 
 
 @implementation CBL_Attachment
 
 
-@synthesize name=_name, contentType=_contentType;
+@synthesize name=_name, contentType=_contentType, blobStore=_blobStore;
 
 
 - (instancetype) initWithName: (NSString*)name contentType: (NSString*)contentType {
@@ -31,8 +32,6 @@
     }
     return self;
 }
-
-
 
 
 - (bool) isValid {
@@ -53,6 +52,35 @@
 #else
     return true;
 #endif
+}
+
+
+- (NSData*) encodedContent {
+    Assert(_blobStore);
+    return [_blobStore blobForKey: blobKey];
+}
+
+
+- (NSData*) content {
+    NSData* content = self.encodedContent;
+    if (encoding == kCBLAttachmentEncodingGZIP && content) {
+        content = [NSData gtm_dataByInflatingData: content];
+        if (!content)
+            Warn(@"Unable to decode attachment!");
+    }
+    return content;
+}
+
+
+- (NSInputStream*) contentStream {
+    Assert(_blobStore);
+    return [_blobStore blobInputStreamForKey: blobKey length: NULL];
+}
+
+
+- (NSString*) contentFilePath {
+    Assert(_blobStore);
+    return [_blobStore blobPathForKey: blobKey];
 }
 
 

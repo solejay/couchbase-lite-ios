@@ -121,7 +121,7 @@ TestCase(CBLMultipartDownloader) {
     RequireTestCase(CBLMultipartReader_Simple);
     RequireTestCase(CBLMultipartReader_Types);
     
-    CBLDatabase* db = [CBLDatabase createEmptyDBAtPath: [NSTemporaryDirectory() stringByAppendingPathComponent: @"CBLMultipartDownloader"]];
+    CBLDatabase* db = [CBLDatabase createEmptyDBAtPath: [NSTemporaryDirectory() stringByAppendingPathComponent: @"CBLMultipartDownloader"] error: NULL];
     NSString* urlStr = RemoteTestDBURL(kAttachTestDBName).absoluteString;
     if (!urlStr) {
         Warn(@"Skipping test CBLMultipartDownloader (no remote test DB URL)");

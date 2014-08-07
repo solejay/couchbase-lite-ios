@@ -23,6 +23,7 @@
 #import "CBL_Puller.h"
 #import "CBL_Pusher.h"
 #import "CBL_Shared.h"
+#import "CBLSymmetricKey.h"
 #import "CBLMisc.h"
 #import "CBLDatabase.h"
 #import "CouchbaseLitePrivate.h"
@@ -97,13 +98,13 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
 
 
 #if DEBUG
-+ (instancetype) createEmptyDBAtPath: (NSString*)path {
-    if (![self deleteDatabaseFilesAtPath: path error: NULL])
++ (instancetype) createEmptyDBAtPath: (NSString*)path error: (NSError**)outError {
+    if (![self deleteDatabaseFilesAtPath: path error: outError])
         return nil;
     CBLDatabase *db = [[self alloc] initWithPath: path name: nil manager: nil readOnly: NO];
-    if (!CBLRemoveFileIfExists(db.attachmentStorePath, NULL))
+    if (!CBLRemoveFileIfExists(db.attachmentStorePath, outError))
         return nil;
-    if (![db open: nil])
+    if (![db open: outError])
         return nil;
     return db;
 }
@@ -209,11 +210,11 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
     else
         flags |= SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE;
 
-    id key = [_manager.shared valueForType: @"encryptionKey" name: @""
-                           inDatabaseNamed: self.name];
+    CBLSymmetricKey* encryptionKey = [_manager.shared valueForType: @"encryptionKey" name: @""
+                                                   inDatabaseNamed: self.name];
 
     LogTo(CBLDatabase, @"Open %@ (flags=%X%@)",
-          _path, flags, (key ? @", encryption key given" : nil));
+          _path, flags, (encryptionKey ? @", encryption key given" : nil));
     if (![_fmdb openWithFlags: flags]) {
         if (outError) *outError = self.fmdbError;
         return NO;
@@ -232,19 +233,9 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
     [CBLView registerFunctions: self];
     
     // Give SQLCipher the encryption key, if provided:
-    if (key) {
+    if (encryptionKey) {
         // http://sqlcipher.net/sqlcipher-api/#key
-        NSString* pragma;
-        if ([key isKindOfClass: [NSString class]]) {
-            pragma = $sprintf(@"PRAGMA key = '%@'",
-                      [key stringByReplacingOccurrencesOfString: @"'" withString: @"''"]);
-        } else {
-            Assert([key isKindOfClass: [NSData class]]);
-            //Assert([key length] == 32, @"SQLCipher raw key must be exactly 256 bits (32 bytes)");
-            pragma = $sprintf(@"PRAGMA key = \"x'%@'\"",
-                              CBLHexFromBytes([key bytes], [key length]));
-        }
-        if (![_fmdb executeUpdate: pragma]) {
+        if (![_fmdb executeUpdate: $sprintf(@"PRAGMA key = \"x'%@'\"", encryptionKey.hexData)]) {
             Warn(@"CBLDatabase: Couldn't give encryption key; SQLite may not be built with SQLCipher");
             if (outError) *outError = self.fmdbError;
             return NO;
@@ -252,7 +243,7 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
     }
 
     // Verify that encryption key is correct (or db is unencrypted, if no key given):
-    if ([_fmdb intForQuery: @"SELECT count(*) FROM sqlite_master"] == 0) {
+    if ([_fmdb intForQuery: @"SELECT count(*) FROM sqlite_master"] == 0 && _fmdb.lastErrorCode != 0) {
         if (outError) {
             if (_fmdb.lastErrorCode == SQLITE_NOTADB)
                 *outError = CBLStatusToNSError(kCBLStatusUnauthorized, nil);

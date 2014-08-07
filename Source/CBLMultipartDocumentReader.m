@@ -409,8 +409,9 @@
 
 TestCase(CBLMultipartDocumentReader) {
     NSString* path = [NSTemporaryDirectory() stringByAppendingPathComponent: @"cbl_test.sqlite3"];
-    CBLDatabase *db = [CBLDatabase createEmptyDBAtPath: path];
-    CAssert([db open: nil]);
+    NSError* error;
+    CBLDatabase *db = [CBLDatabase createEmptyDBAtPath: path error: &error];
+    Assert(db, @"Couldn't create empty db: %@", error);
 
     NSData* mime = CBLContentsOfTestFile(@"Multipart1.mime");
     NSDictionary* headers = @{@"Content-Type": @"multipart/mixed; boundary=\"BOUNDARY\""};

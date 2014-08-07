@@ -14,8 +14,10 @@
 //  and limitations under the License.
 
 #import "CBL_BlobStore.h"
+#import "CBLSymmetricKey.h"
 #import "CBLBase64.h"
 #import "CBLMisc.h"
+#import "CBLStatus.h"
 #import <ctype.h>
 
 
@@ -33,7 +35,7 @@
 }
 
 
-@synthesize path=_path;
+@synthesize path=_path, encryptionKey=_encryptionKey;
 #if TARGET_OS_IPHONE
 @synthesize fileProtection=_fileProtection;
 #endif
@@ -74,7 +76,8 @@
 }
 
 
-- (NSString*) pathForKey: (CBLBlobKey)key {
+// Internal only. This file might be encrypted.
+- (NSString*) rawPathForKey: (CBLBlobKey)key {
     char out[2*sizeof(key.bytes) + 1 + strlen(kFileExtension) + 1];
     char *dst = &out[0];
     for( size_t i=0; i<sizeof(key.bytes); i+=1 )
@@ -107,29 +110,53 @@
 
 
 - (NSData*) blobForKey: (CBLBlobKey)key {
-    NSString* path = [self pathForKey: key];
-    return [NSData dataWithContentsOfFile: path options: NSDataReadingMappedIfSafe error: NULL];
+    NSString* path = [self rawPathForKey: key];
+    NSData* blob =  [NSData dataWithContentsOfFile: path options: NSDataReadingMappedIfSafe
+                                                 error: NULL];
+    if (_encryptionKey && blob) {
+        blob = [_encryptionKey decryptData: blob];
+        CBLBlobKey decodedKey = [[self class] keyForBlob: blob];
+        if (memcmp(&key, &decodedKey, sizeof(key)) != 0) {
+            Warn(@"Attachment %@ decoded incorrectly!", path);
+            blob = nil;
+        }
+    }
+    return blob;
 }
 
 - (NSInputStream*) blobInputStreamForKey: (CBLBlobKey)key
                                   length: (UInt64*)outLength
 {
-    NSString* path = [self pathForKey: key];
+    NSString* path = [self rawPathForKey: key];
     if (outLength) {
-        NSDictionary* info = [[NSFileManager defaultManager] attributesOfItemAtPath: path
-                                                                              error: NULL];
-        if (!info)
-            return nil;
-        *outLength = [info fileSize];
+        if (_encryptionKey) {
+            *outLength = 0; // not known
+        } else {
+            NSDictionary* info = [[NSFileManager defaultManager] attributesOfItemAtPath: path
+                                                                                  error: NULL];
+            if (!info)
+                return nil;
+            *outLength = [info fileSize];
+        }
     }
-    return [NSInputStream inputStreamWithFileAtPath: path];
+    NSInputStream* stream = [NSInputStream inputStreamWithFileAtPath: path];
+    if (_encryptionKey)
+        stream = [_encryptionKey decryptStream: stream];
+    return stream;
 }
+
+- (NSString*) blobPathForKey: (CBLBlobKey)key {
+    if (_encryptionKey)
+        return nil;
+    return [self rawPathForKey: key];
+}
+
 
 - (BOOL) storeBlob: (NSData*)blob
        creatingKey: (CBLBlobKey*)outKey
 {
     *outKey = [[self class] keyForBlob: blob];
-    NSString* path = [self pathForKey: *outKey];
+    NSString* path = [self rawPathForKey: *outKey];
     if ([[NSFileManager defaultManager] isReadableFileAtPath: path])
         return YES;
 
@@ -140,6 +167,14 @@
     else
         options |= NSDataWritingFileProtectionCompleteUntilFirstUserAuthentication; // default
 #endif
+
+    if (_encryptionKey) {
+        blob = [_encryptionKey encryptData: blob];
+        if (!blob) {
+            Warn(@"CBL_BlobStore: Failed to encode data for %@", path);
+            return NO;
+        }
+    }
 
     NSError* error;
     if (![blob writeToFile: path options: options error: &error]) {
@@ -246,8 +281,20 @@
 
 
 @implementation CBL_BlobStoreWriter
+{
+@private
+    CBL_BlobStore* _store;
+    NSString* _tempPath;
+    NSFileHandle* _out;
+    UInt64 _length;
+    SHA_CTX _shaCtx;
+    MD5_CTX _md5Ctx;
+    CBLBlobKey _blobKey;
+    CBLMD5Key _MD5Digest;
+    CBLCryptorBlock _encryptor;
+}
 
-@synthesize length=_length, blobKey=_blobKey, filePath=_tempPath;
+@synthesize length=_length, blobKey=_blobKey;
 
 - (instancetype) initWithStore: (CBL_BlobStore*)store {
     self = [super init];
@@ -290,19 +337,29 @@
         if (!_out) {
             return nil;
         }
+        CBLSymmetricKey* encryptionKey = _store.encryptionKey;
+        if (encryptionKey)
+            _encryptor = [encryptionKey createEncryptor];
     }
     return self;
 }
 
 - (void) appendData: (NSData*)data {
-    [_out writeData: data];
     NSUInteger dataLen = data.length;
     _length += dataLen;
     SHA1_Update(&_shaCtx, data.bytes, dataLen);
     MD5_Update(&_md5Ctx, data.bytes, dataLen);
+
+    if (_encryptor)
+        data = _encryptor(data);
+    [_out writeData: data];
 }
 
 - (void) closeFile {
+    if (_encryptor) {
+        [_out writeData: _encryptor(nil)];  // write remaining encrypted data & clean up
+        _encryptor = nil;
+    }
     [_out closeFile];
     _out = nil;    
 }
@@ -324,12 +381,36 @@
                                                         length: sizeof(_blobKey)]];
 }
 
+- (NSData*) blobData {
+    Assert(!_out, @"Not finished yet");
+    NSData* data = [NSData dataWithContentsOfFile: _tempPath
+                                          options: NSDataReadingMappedIfSafe
+                                            error: NULL];
+    CBLSymmetricKey* encryptionKey = _store.encryptionKey;
+    if (encryptionKey && data)
+        data = [encryptionKey decryptData: data];
+    return data;
+}
+
+- (NSInputStream*) blobInputStream {
+    Assert(!_out, @"Not finished yet");
+    NSInputStream* stream = [NSInputStream inputStreamWithFileAtPath: _tempPath];
+    CBLSymmetricKey* encryptionKey = _store.encryptionKey;
+    if (encryptionKey && stream)
+        stream = [encryptionKey decryptStream: stream];
+    return stream;
+}
+
+- (NSString*) filePath {
+    return _store.encryptionKey ? nil : _tempPath;
+}
+
 - (BOOL) install {
     if (!_tempPath)
         return YES;  // already installed
     Assert(!_out, @"Not finished");
     // Move temp file to correct location in blob store:
-    NSString* dstPath = [_store pathForKey: _blobKey];
+    NSString* dstPath = [_store rawPathForKey: _blobKey];
     if ([[NSFileManager defaultManager] moveItemAtPath: _tempPath
                                                 toPath: dstPath error:NULL]) {
         _tempPath = nil;

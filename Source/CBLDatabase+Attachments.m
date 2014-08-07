@@ -74,6 +74,9 @@ static bool digestToBlobKey(NSString* digest, CBLBlobKey* key) {
 }
 
 
+#pragma mark - ADDING ATTACHMENTS:
+
+
 - (CBL_BlobStoreWriter*) attachmentWriter {
     return [[CBL_BlobStoreWriter alloc] initWithStore: _attachments];
 }
@@ -205,6 +208,9 @@ static bool digestToBlobKey(NSString* digest, CBLBlobKey* key) {
 }
 
 
+#pragma mark - GETTING ATTACHMENTS:
+
+
 - (NSData*) decodeAttachment: (NSData*)attachment encoding: (CBLAttachmentEncoding)encoding {
     switch (encoding) {
         case kCBLAttachmentEncodingNone:
@@ -218,76 +224,84 @@ static bool digestToBlobKey(NSString* digest, CBLBlobKey* key) {
 }
 
 
-/** Returns the location of an attachment's file in the blob store. */
-- (NSString*) getAttachmentPathForSequence: (SequenceNumber)sequence
-                                     named: (NSString*)filename
-                                      type: (NSString**)outType
-                                  encoding: (CBLAttachmentEncoding*)outEncoding
-                                    status: (CBLStatus*)outStatus
+- (CBL_Attachment*) attachmentForSequence: (SequenceNumber)sequence
+                                    named: (NSString*)filename
+                                   status: (CBLStatus*)outStatus
 {
     Assert(sequence > 0);
     Assert(filename);
-    NSString* filePath = nil;
     CBL_FMResultSet* r = [_fmdb executeQuery:
-                      @"SELECT key, type, encoding FROM attachments WHERE sequence=? AND filename=?",
-                      @(sequence), filename];
+                          @"SELECT key, type, encoding, length, encoded_length, revpos"
+                            " FROM attachments WHERE sequence=? AND filename=?",
+                          @(sequence), filename];
     if (!r) {
         *outStatus = self.lastDbError;
-        return nil;
+        return NULL;
     }
     @try {
         if (![r next]) {
             *outStatus = kCBLStatusNotFound;
             return nil;
         }
-        NSData* keyData = [r dataNoCopyForColumnIndex: 0];
-        if (keyData.length != sizeof(CBLBlobKey)) {
+        NSData* blobKey = [r dataNoCopyForColumnIndex: 0];
+        if (blobKey.length != sizeof(CBLBlobKey)) {
             Warn(@"%@: Attachment %lld.'%@' has bogus key size %u",
-                 self, sequence, filename, (unsigned)keyData.length);
+                 self, sequence, filename, (unsigned)blobKey.length);
             *outStatus = kCBLStatusCorruptError;
-            return nil;
+            return NULL;
         }
-        filePath = [_attachments pathForKey: *(CBLBlobKey*)keyData.bytes];
         *outStatus = kCBLStatusOK;
-        if (outType)
-            *outType = [r stringForColumnIndex: 1];
-        if (outEncoding)
-            *outEncoding = [r intForColumnIndex: 2];
+
+        CBL_Attachment* attachment = [[CBL_Attachment alloc] initWithName: filename
+                                                              contentType: [r stringForColumnIndex: 1]];
+        attachment->blobKey = *(const CBLBlobKey*)blobKey.bytes;
+        attachment->encoding = [r intForColumnIndex: 2];
+        attachment->length = [r intForColumnIndex: 3];
+        attachment->encodedLength = [r intForColumnIndex: 4];
+        attachment->revpos = [r intForColumnIndex: 5];
+        attachment.blobStore = _attachments;
+        return attachment;
     } @finally {
         [r close];
     }
-    return filePath;
 }
 
 
-/** Returns the content and MIME type of an attachment */
-- (NSData*) getAttachmentForSequence: (SequenceNumber)sequence
-                               named: (NSString*)filename
-                                type: (NSString**)outType
-                            encoding: (CBLAttachmentEncoding*)outEncoding
-                              status: (CBLStatus*)outStatus
-{
-    CBLAttachmentEncoding encoding;
-    NSString* filePath = [self getAttachmentPathForSequence: sequence
-                                                      named: filename
-                                                       type: outType
-                                                   encoding: &encoding
-                                                     status: outStatus];
-    if (!filePath)
+- (CBL_Attachment*) attachmentForDict: (NSDictionary*)attachInfo named: (NSString*)name {
+    NSString* digest = $castIf(NSString, attachInfo[@"digest"]);
+    if (!digest)
         return nil;
-    NSError* error;
-    NSData* contents = [NSData dataWithContentsOfFile: filePath options: NSDataReadingMappedIfSafe
-                                                error: &error];
-    if (!contents) {
-        Warn(@"%@: Failed to load attachment %lld.'%@' -- %@", self, sequence, filename, error);
-        *outStatus = kCBLStatusCorruptError;
+
+    // This may be an incoming attachment:
+    CBLBlobKey key;
+    if (!digestToBlobKey(digest, &key))
         return nil;
-    }
-    if (outEncoding)
-        *outEncoding = encoding;
-    else
-        contents = [self decodeAttachment: contents encoding: encoding];
-    return contents;
+
+    CBL_Attachment* attachment = [[CBL_Attachment alloc] initWithName: name
+                                                          contentType: attachInfo[@"content_type"]];
+    if (!attachment)
+        return nil;
+    attachment->blobKey = key;
+    attachment->length = [attachInfo[@"length"] longLongValue];
+    attachment->encodedLength = [attachInfo[@"encoded_length"] longLongValue];
+    attachment->revpos = [attachInfo[@"revpos"] unsignedIntValue];
+
+    if ($equal(attachInfo[@"encoding"], @"gzip"))
+        attachment->encoding = kCBLAttachmentEncodingGZIP;
+
+    attachment.blobStore = _attachments;
+    return attachment;
+}
+
+
+- (NSString*) pathForPendingAttachmentWithDict: (NSDictionary*)attachInfo {
+    NSString* digest = $castIf(NSString, attachInfo[@"digest"]);
+    if (!digest)
+        return nil;
+    CBL_BlobStoreWriter* pending = _pendingAttachmentsByDigest[digest];
+    if ([pending isKindOfClass: [CBL_BlobStoreWriter class]])
+        return pending.filePath;
+    return nil;
 }
 
 
@@ -361,29 +375,7 @@ static bool digestToBlobKey(NSString* digest, CBLBlobKey* key) {
 }
 
 
-- (NSURL*) fileForAttachmentDict: (NSDictionary*)attachmentDict
-{
-    NSString* digest = $castIf(NSString, attachmentDict[@"digest"]);
-    if (!digest)
-        return nil;
-    NSString* path = nil;
-    id pending = _pendingAttachmentsByDigest[digest];
-    if (pending) {
-        if ([pending isKindOfClass: [CBL_BlobStoreWriter class]]) {
-            path = [pending filePath];
-        } else {
-            CBLBlobKey key = *(CBLBlobKey*)[pending bytes];
-            path = [_attachments pathForKey: key];
-        }
-    } else {
-        // If it's an installed attachment, ask the blob-store for it:
-        CBLBlobKey key;
-        if (digestToBlobKey(digest, &key))
-            path = [_attachments pathForKey: key];
-    }
-
-    return path ? [NSURL fileURLWithPath: path] : nil;
-}
+#pragma mark - TRANSMITTING ATTACHMENTS:
 
 
 + (void) stubOutAttachments: (NSDictionary*)attachments
@@ -453,15 +445,12 @@ static bool digestToBlobKey(NSString* digest, CBLBlobKey* key) {
         ^NSDictionary *(NSString *name, NSDictionary *attachment) {
             if (!attachment[@"follows"])
                 return attachment;
-            NSURL* fileURL = [self fileForAttachmentDict: attachment];
-            NSData* fileData = [NSData dataWithContentsOfURL: fileURL
-                                                     options: NSDataReadingMappedIfSafe
-                                                       error: &error];
-            if (!fileData)
+            NSData* content = [self attachmentForDict: attachment named: name].content;
+            if (!content)
                 return nil;
             NSMutableDictionary* editedAttachment = [attachment mutableCopy];
             [editedAttachment removeObjectForKey: @"follows"];
-            editedAttachment[@"data"] = [CBLBase64 encode: fileData];
+            editedAttachment[@"data"] = [CBLBase64 encode: content];
             return editedAttachment;
         }
      ];
@@ -614,7 +603,10 @@ static bool digestToBlobKey(NSString* digest, CBLBlobKey* key) {
         if (attachment[@"follows"]) {
             NSString* disposition = $sprintf(@"attachment; filename=%@", CBLQuoteString(attachmentName));
             [writer setNextPartsHeaders: $dict({@"Content-Disposition", disposition})];
-            [writer addFileURL: [self fileForAttachmentDict: attachment]];
+            NSInputStream* stream = [self attachmentForDict: attachment named: attachmentName].contentStream;
+            if (!stream)
+                return nil;
+            [writer addStream: stream];
         }
     }
     return writer;

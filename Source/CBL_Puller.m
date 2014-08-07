@@ -19,6 +19,7 @@
 #import "CBLDatabase+Replication.h"
 #import "CBL_Revision.h"
 #import "CBL_Body.h"
+#import "CBL_Attachment.h"
 #import "CBLChangeTracker.h"
 #import "CBLAuthorizer.h"
 #import "CBLBatcher.h"
@@ -594,7 +595,7 @@ static NSString* joinQuotedEscaped(NSArray* strings);
                                                                   BOOL *stop) {
             [attachment removeObjectForKey: @"file"];
             if (attachment[@"follows"] && !attachment[@"data"]) {
-                NSString* filePath = [[_db fileForAttachmentDict: attachment] path];
+                NSString* filePath = [_db pathForPendingAttachmentWithDict: attachment];
                 if (filePath)
                     attachment[@"file"] = filePath;
             }
