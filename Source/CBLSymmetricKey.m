@@ -20,7 +20,8 @@
 
 #define kAlgorithm      kCCAlgorithmAES
 #define kKeySize        kCCKeySizeAES256
-#define kIVSize         kCCBlockSizeAES128      // (All key sizes of AES use a 128-bit block.)
+#define kBlockSize      kCCBlockSizeAES128      // (All key sizes of AES use a 128-bit block.)
+#define kIVSize         kBlockSize
 #define kChecksumSize   sizeof(uint32_t)
 
 #define kDefaultSalt @"Salty McNaCl"
@@ -103,7 +104,7 @@ typedef struct {
     __block BOOL wroteIV = NO;
 
     return ^NSMutableData*(NSData* input) {
-        NSMutableData* dataOut = [NSMutableData dataWithLength: input.length + 256];
+        NSMutableData* dataOut = [NSMutableData dataWithLength: input.length + kBlockSize];
         size_t bytesWritten;
         CCCryptorStatus status;
         if (input) {
@@ -166,8 +167,10 @@ static BOOL readFully(NSInputStream* in, void* dst, size_t len) {
     NSInteger n;
     for (size_t bytesRead = 0; bytesRead < len; bytesRead += n) {
         n = [in read: (uint8_t*)dst + bytesRead maxLength: (len - bytesRead)];
-        if (n <= 0)
+        if (n <= 0) {
+            Warn(@"SymmetricKey: readFully failed, error=%@", in.streamError);
             return NO;
+        }
     }
     return YES;
 }
@@ -177,8 +180,10 @@ static BOOL writeFully(NSOutputStream* out, const void* src, size_t len) {
     NSInteger n;
     for (size_t bytesWritten = 0; bytesWritten < len; bytesWritten += n) {
         n = [out write: (const uint8_t*)src + bytesWritten maxLength: (len - bytesWritten)];
-        if (n <= 0)
+        if (n <= 0) {
+            Warn(@"SymmetricKey: writeFully failed, error=%@", out.streamError);
             return NO;
+        }
     }
     return YES;
 }
@@ -197,24 +202,25 @@ static BOOL decryptStreamSync(NSInputStream* encryptedStream, NSOutputStream *wr
                                              header.iv, &cryptor);
     if (status != kCCSuccess)
         return NO;
-    uint8_t inBuffer[4096], outBuffer[4096+128];
+    static const size_t kInputBufferSize = 4096;
+    uint8_t buffer[kInputBufferSize+kBlockSize];    // buffer shared for input and output
     size_t bytesWritten;
     BOOL ok = YES;
     for(;;) {
-        NSInteger bytesRead = [encryptedStream read: inBuffer maxLength: sizeof(inBuffer)];
+        NSInteger bytesRead = [encryptedStream read: buffer maxLength: kInputBufferSize];
         if (bytesRead == 0) {
             break;
         } else if (bytesRead < 0
-                   || CCCryptorUpdate(cryptor, inBuffer, bytesRead,
-                                      outBuffer, sizeof(outBuffer), &bytesWritten) != kCCSuccess
-                   || !writeFully(writer, outBuffer, bytesWritten))
+                   || CCCryptorUpdate(cryptor, buffer, bytesRead,
+                                      buffer, sizeof(buffer), &bytesWritten) != kCCSuccess
+                   || !writeFully(writer, buffer, bytesWritten))
         {
             ok = NO;
             break;
         }
     };
-    ok = (ok && CCCryptorFinal(cryptor, outBuffer, sizeof(outBuffer), &bytesWritten) == kCCSuccess
-             && writeFully(writer, outBuffer, bytesWritten));
+    ok = (ok && CCCryptorFinal(cryptor, buffer, sizeof(buffer), &bytesWritten) == kCCSuccess
+             && writeFully(writer, buffer, bytesWritten));
     CCCryptorRelease(cryptor);
     return ok;
 }
@@ -226,15 +232,16 @@ static BOOL decryptStreamSync(NSInputStream* encryptedStream, NSOutputStream *wr
     CFStreamCreateBoundPair(NULL, &cfRead, &cfWrite, 4096);
     NSInputStream* reader = CFBridgingRelease(cfRead);
     NSOutputStream* writer = CFBridgingRelease(cfWrite);
-    NSData* keyData = _keyData;
+    [reader open];
+    [writer open];
 
+    NSData* keyData = _keyData;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
-        [writer open];
-        decryptStreamSync(encryptedStream, writer, keyData);
+        if (!decryptStreamSync(encryptedStream, writer, keyData))
+            Warn(@"CBLSymmetricKey: decryptStream failed (bad input?)");
         [writer close];
     });
 
-    [reader open];
     return reader;
 }
 

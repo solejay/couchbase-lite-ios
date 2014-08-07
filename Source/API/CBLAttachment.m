@@ -145,17 +145,18 @@
 }
 
 
-- (NSInputStream*) contentStream {
+- (NSInputStream*) openContentStream {
+    NSInputStream* stream = nil;
     if (_body) {
         if ([_body isKindOfClass: [NSData class]])
-            return [NSInputStream inputStreamWithData: _body];
-        else if ([_body isKindOfClass: [NSURL class]] && [_body isFileURL]) {
-            return [NSInputStream inputStreamWithURL: _body];
-        }
+            stream = [NSInputStream inputStreamWithData: _body];
+        else if ([_body isKindOfClass: [NSURL class]] && [_body isFileURL])
+            stream = [NSInputStream inputStreamWithURL: _body];
     } else {
-        return self._internalAttachment.contentStream;
+        stream = self._internalAttachment.contentStream;
     }
-    return nil;
+    [stream open];
+    return stream;
 }
 
 

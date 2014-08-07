@@ -15,6 +15,7 @@
 
 #import "CouchbaseLitePrivate.h"
 #import "CBLInternal.h"
+#import "CBLSymmetricKey.h"
 #import "Test.h"
 
 
@@ -630,59 +631,80 @@ TestCase(API_Resolve_Conflict) {
 #pragma mark - ATTACHMENTS
 
 TestCase(API_Attachments) {
-    CBLDatabase* db = createEmptyDB();
-    NSDictionary* properties = [NSDictionary dictionaryWithObjectsAndKeys:
-                                @"testAttachments", @"testName",
-                                nil];
-    CBLDocument* doc = createDocumentWithProperties(db, properties);
-    CBLSavedRevision* rev = doc.currentRevision;
-    
-    CAssertEq(rev.attachments.count, (NSUInteger)0);
-    CAssertEq(rev.attachmentNames.count, (NSUInteger)0);
-    CAssertNil([rev attachmentNamed: @"index.html"]);
-    
-    NSData* body = [@"This is a test attachment!" dataUsingEncoding: NSUTF8StringEncoding];
-    CBLUnsavedRevision *rev2 = [doc newRevision];
-    [rev2 setAttachmentNamed: @"index.html" withContentType: @"text/plain; charset=utf-8" content:body];
+    for (int encrypted = 0; encrypted <= 1; ++encrypted) {
+        CBLDatabase* db = createEmptyDB();
+        if (encrypted) {
+            Log(@"*** Now testing with attachment encryption ***");
+            db.attachmentStore.encryptionKey = [[CBLSymmetricKey alloc] init];
+        }
+        NSDictionary* properties = [NSDictionary dictionaryWithObjectsAndKeys:
+                                    @"testAttachments", @"testName",
+                                    nil];
+        CBLDocument* doc = createDocumentWithProperties(db, properties);
+        CBLSavedRevision* rev = doc.currentRevision;
+        
+        CAssertEq(rev.attachments.count, (NSUInteger)0);
+        CAssertEq(rev.attachmentNames.count, (NSUInteger)0);
+        CAssertNil([rev attachmentNamed: @"index.html"]);
+        
+        NSData* body = [@"This is a test attachment!" dataUsingEncoding: NSUTF8StringEncoding];
+        CBLUnsavedRevision *rev2 = [doc newRevision];
+        [rev2 setAttachmentNamed: @"index.html" withContentType: @"text/plain; charset=utf-8" content:body];
 
-    CAssertEq(rev2.attachments.count, (NSUInteger)1);
-    CAssertEqual(rev2.attachmentNames, [NSArray arrayWithObject: @"index.html"]);
-    CBLAttachment* attach = [rev2 attachmentNamed:@"index.html"];
-    CAssertEq(attach.document, doc);
-    CAssertEqual(attach.name, @"index.html");
-    CAssertEqual(attach.contentType, @"text/plain; charset=utf-8");
-    CAssertEqual(attach.content, body);
-    CAssertEq(attach.length, (UInt64)body.length);
+        CAssertEq(rev2.attachments.count, (NSUInteger)1);
+        CAssertEqual(rev2.attachmentNames, [NSArray arrayWithObject: @"index.html"]);
+        CBLAttachment* attach = [rev2 attachmentNamed:@"index.html"];
+        CAssertEq(attach.document, doc);
+        CAssertEqual(attach.name, @"index.html");
+        CAssertEqual(attach.contentType, @"text/plain; charset=utf-8");
+        CAssertEqual(attach.content, body);
+        CAssertEq(attach.length, (UInt64)body.length);
 
-    NSError * error;
-    CBLSavedRevision *rev3 = [rev2 save:&error];
-    
-    CAssertNil(error);
-    CAssert(rev3);
-    CAssertEq(rev3.attachments.count, (NSUInteger)1);
-    CAssertEq(rev3.attachmentNames.count, (NSUInteger)1);
+        NSError * error;
+        CBLSavedRevision *rev3 = [rev2 save:&error];
+        
+        CAssertNil(error);
+        CAssert(rev3);
+        CAssertEq(rev3.attachments.count, (NSUInteger)1);
+        CAssertEq(rev3.attachmentNames.count, (NSUInteger)1);
 
-    attach = [rev3 attachmentNamed:@"index.html"];
-    CAssert(attach);
-    CAssertEq(attach.document, doc);
-    CAssertEqual(attach.name, @"index.html");
-    CAssertEqual(rev3.attachmentNames, [NSArray arrayWithObject: @"index.html"]);
+        attach = [rev3 attachmentNamed:@"index.html"];
+        CAssert(attach);
+        CAssertEq(attach.document, doc);
+        CAssertEqual(attach.name, @"index.html");
+        CAssertEqual(rev3.attachmentNames, [NSArray arrayWithObject: @"index.html"]);
 
-    CAssertEqual(attach.contentType, @"text/plain; charset=utf-8");
-    CAssertEqual(attach.content, body);
-    CAssertEq(attach.length, (UInt64)body.length);
+        CAssertEqual(attach.contentType, @"text/plain; charset=utf-8");
+        CAssertEqual(attach.content, body);
+        CAssertEq(attach.length, (UInt64)body.length);
 
-    NSURL* bodyURL = attach.contentURL;
-    CAssert(bodyURL.isFileURL);
-    CAssertEqual([NSData dataWithContentsOfURL: bodyURL], body);
+        // Look at the attachment's file:
+        NSURL* bodyURL = attach.contentURL;
+        if (encrypted)
+            CAssert(bodyURL == nil);
+        else {
+            CAssert(bodyURL.isFileURL);
+            CAssertEqual([NSData dataWithContentsOfURL: bodyURL], body);
+        }
 
-    CBLUnsavedRevision *newRev = [rev3 createRevision];
-    [newRev removeAttachmentNamed: attach.name];
-    CBLRevision* rev4 = [newRev save: &error];
-    CAssert(!error);
-    CAssert(rev4);
-    CAssertEq([rev4.attachmentNames count], (NSUInteger)0);
-    closeTestDB(db);
+        // Read the attachment from a stream:
+        NSInputStream* in = [attach openContentStream];
+        NSMutableData* fromStream = [NSMutableData data];
+        uint8_t buffer[1024];
+        NSInteger bytesRead;
+        while ((bytesRead = [in read: buffer maxLength: sizeof(buffer)]) > 0)
+            [fromStream appendBytes: buffer length: bytesRead];
+        Assert(bytesRead == 0, @"Stream error: %@", in.streamError);
+        AssertEqual(fromStream, body);
+
+        CBLUnsavedRevision *newRev = [rev3 createRevision];
+        [newRev removeAttachmentNamed: attach.name];
+        CBLRevision* rev4 = [newRev save: &error];
+        CAssert(!error);
+        CAssert(rev4);
+        CAssertEq([rev4.attachmentNames count], (NSUInteger)0);
+        closeTestDB(db);
+    }
 }
 
 #pragma mark - CHANGE TRACKING

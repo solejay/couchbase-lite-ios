@@ -140,6 +140,7 @@
         }
     }
     NSInputStream* stream = [NSInputStream inputStreamWithFileAtPath: path];
+    [stream open];
     if (_encryptionKey)
         stream = [_encryptionKey decryptStream: stream];
     return stream;
@@ -395,6 +396,7 @@
 - (NSInputStream*) blobInputStream {
     Assert(!_out, @"Not finished yet");
     NSInputStream* stream = [NSInputStream inputStreamWithFileAtPath: _tempPath];
+    [stream open];
     CBLSymmetricKey* encryptionKey = _store.encryptionKey;
     if (encryptionKey && stream)
         stream = [encryptionKey decryptStream: stream];
