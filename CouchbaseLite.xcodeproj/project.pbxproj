@@ -541,6 +541,11 @@
 		27E11F1014AD15940006B340 /* CBLHTTPResponse.h in Headers */ = {isa = PBXBuildFile; fileRef = 27E11F0E14AD15940006B340 /* CBLHTTPResponse.h */; };
 		27E11F1114AD15940006B340 /* CBLHTTPResponse.m in Sources */ = {isa = PBXBuildFile; fileRef = 27E11F0F14AD15940006B340 /* CBLHTTPResponse.m */; };
 		27E11F1214AD172F0006B340 /* CouchbaseLiteListener.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 275315D514ACF0A10065964D /* CouchbaseLiteListener.framework */; };
+		27E25A0D199ECC87004EEDB6 /* NuModel.h in Headers */ = {isa = PBXBuildFile; fileRef = 27E25A0B199ECC87004EEDB6 /* NuModel.h */; };
+		27E25A0E199ECC87004EEDB6 /* NuModel.m in Sources */ = {isa = PBXBuildFile; fileRef = 27E25A0C199ECC87004EEDB6 /* NuModel.m */; };
+		27E25A0F199ECC87004EEDB6 /* NuModel.m in Sources */ = {isa = PBXBuildFile; fileRef = 27E25A0C199ECC87004EEDB6 /* NuModel.m */; };
+		27E25A1119A17B66004EEDB6 /* NuModel_Tests.m in Sources */ = {isa = PBXBuildFile; fileRef = 27E25A1019A17B66004EEDB6 /* NuModel_Tests.m */; };
+		27E25A1219A17B66004EEDB6 /* NuModel_Tests.m in Sources */ = {isa = PBXBuildFile; fileRef = 27E25A1019A17B66004EEDB6 /* NuModel_Tests.m */; };
 		27E2E5A3159383E9005B9234 /* CBLAttachment.h in Headers */ = {isa = PBXBuildFile; fileRef = 27E2E5A1159383E9005B9234 /* CBLAttachment.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		27E2E5A4159383E9005B9234 /* CBLAttachment.m in Sources */ = {isa = PBXBuildFile; fileRef = 27E2E5A2159383E9005B9234 /* CBLAttachment.m */; };
 		27E2E5A5159383E9005B9234 /* CBLAttachment.m in Sources */ = {isa = PBXBuildFile; fileRef = 27E2E5A2159383E9005B9234 /* CBLAttachment.m */; };
@@ -1278,6 +1283,10 @@
 		27E11F0C14ACFFC60006B340 /* CBLHTTPServer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLHTTPServer.h; sourceTree = "<group>"; };
 		27E11F0E14AD15940006B340 /* CBLHTTPResponse.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLHTTPResponse.h; sourceTree = "<group>"; };
 		27E11F0F14AD15940006B340 /* CBLHTTPResponse.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CBLHTTPResponse.m; sourceTree = "<group>"; };
+		27E25A0B199ECC87004EEDB6 /* NuModel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NuModel.h; sourceTree = "<group>"; };
+		27E25A0C199ECC87004EEDB6 /* NuModel.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NuModel.m; sourceTree = "<group>"; };
+		27E25A1019A17B66004EEDB6 /* NuModel_Tests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NuModel_Tests.m; sourceTree = "<group>"; };
+		27E25A1319A17BF8004EEDB6 /* NuModel_Internal.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NuModel_Internal.h; sourceTree = "<group>"; };
 		27E2E5A1159383E9005B9234 /* CBLAttachment.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLAttachment.h; sourceTree = "<group>"; };
 		27E2E5A2159383E9005B9234 /* CBLAttachment.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CBLAttachment.m; sourceTree = "<group>"; };
 		27E2E5CB159533A5005B9234 /* CBLReplication.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLReplication.h; sourceTree = "<group>"; };
@@ -2275,6 +2284,10 @@
 		27DA435D15918C9600F9E7B5 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				27E25A0B199ECC87004EEDB6 /* NuModel.h */,
+				27E25A0C199ECC87004EEDB6 /* NuModel.m */,
+				27E25A1319A17BF8004EEDB6 /* NuModel_Internal.h */,
+				27E25A1019A17B66004EEDB6 /* NuModel_Tests.m */,
 				27DA435315918C8C00F9E7B5 /* CBLModel.h */,
 				27DA435415918C8C00F9E7B5 /* CBLModel.m */,
 				27B945B117692E2000B2DF2D /* CBLModel+Properties.m */,
@@ -2550,6 +2563,7 @@
 				276F25FB18A3386100A70679 /* DDData.h in Headers */,
 				27DA42FD158E7D3500F9E7B5 /* CBLDatabase.h in Headers */,
 				27DA4308158FA35600F9E7B5 /* CBLCache.h in Headers */,
+				27E25A0D199ECC87004EEDB6 /* NuModel.h in Headers */,
 				27DA4312158FB79F00F9E7B5 /* CBLQuery.h in Headers */,
 				27DA4345159125B500F9E7B5 /* CBLManager.h in Headers */,
 				27DA434A15912AFD00F9E7B5 /* CBLView.h in Headers */,
@@ -3178,6 +3192,7 @@
 				27B15517164A118100DF5E2C /* CBL_Database_Tests.m in Sources */,
 				2776A59316A0C3A6006FF199 /* CBLPersonaAuthorizer.m in Sources */,
 				27A98EA517BEDC9900943528 /* ReplicationAPITests.m in Sources */,
+				27E25A1119A17B66004EEDB6 /* NuModel_Tests.m in Sources */,
 				2776A63116A9BCBC006FF199 /* CBLDatabaseChange.m in Sources */,
 				271C2AD516FA176300B8C9DB /* CBL_Shared.m in Sources */,
 				27DA435115918C0200F9E7B5 /* MYDynamicObject.m in Sources */,
@@ -3237,6 +3252,7 @@
 				277EF46E17F4DF3700F7B7F7 /* stem_UTF_8_italian.c in Sources */,
 				277EF43217F4DF3700F7B7F7 /* stem_ISO_8859_1_english.c in Sources */,
 				277EF43E17F4DF3700F7B7F7 /* stem_ISO_8859_1_hungarian.c in Sources */,
+				27E25A0E199ECC87004EEDB6 /* NuModel.m in Sources */,
 				277EF47717F4DF3700F7B7F7 /* stem_UTF_8_portuguese.c in Sources */,
 				277EF44D17F4DF3700F7B7F7 /* stem_ISO_8859_1_spanish.c in Sources */,
 				277EF44A17F4DF3700F7B7F7 /* stem_ISO_8859_1_portuguese.c in Sources */,
@@ -3388,7 +3404,9 @@
 				27DA435C15918C8E00F9E7B5 /* CBLModelFactory.m in Sources */,
 				27E2E5A5159383E9005B9234 /* CBLAttachment.m in Sources */,
 				27E2E5CF159533A5005B9234 /* CBLReplication.m in Sources */,
+				27E25A1219A17B66004EEDB6 /* NuModel_Tests.m in Sources */,
 				27F9411D176A5FC2007BAEBE /* CBLModelArray.m in Sources */,
+				27E25A0F199ECC87004EEDB6 /* NuModel.m in Sources */,
 				277EF49517F5F3CB00F7B7F7 /* CBLView+Querying.m in Sources */,
 				270D6FC3164484190081812D /* CBLSocketChangeTracker.m in Sources */,
 				27BDA820181973EF00F27A11 /* CBLBulkDownloader.m in Sources */,
