@@ -88,10 +88,17 @@
 
 - (void) encodeNumber: (NSNumber*)number {
     const char* encoding = number.objCType;
-    if (encoding[0] == 'c')
-        [_output appendString:[number boolValue] ? @"true" : @"false"];
-    else
-        [_output appendString:[number stringValue]];
+    if (encoding[0] == 'c') {
+        // Pointer comparison is the only way to tell bools apart from chars :(
+        if (number == $true) {
+            [_output appendString: @"true"];
+            return;
+        } else if (number == $false) {
+            [_output appendString: @"false"];
+            return;
+        }
+    }
+    [_output appendString:[number stringValue]];
 }
 
 

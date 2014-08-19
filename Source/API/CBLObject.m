@@ -1,13 +1,15 @@
 //
-//  NuModel.m
+//  CBLObject.m
 //  CouchbaseLite
 //
 //  Created by Jens Alfke on 8/15/14.
 //
 //
 
-#import "NuModel.h"
-#import "NuModel_Internal.h"
+#import "CBLObject.h"
+#import "CBLObject_Internal.h"
+#import "CouchbaseLitePrivate.h"
+#import "CBLNuModel.h"
 #import "CBLModelArray.h"
 #import "CBLJSON.h"
 #import "CBLBase64.h"
@@ -17,8 +19,20 @@
 #define kIvarPrefixStr "_doc_"
 
 
+SEL selectorOfGetter(objc_property_t prop) {
+    char* customGetter = property_copyAttributeValue(prop, "G");
+    if (customGetter) {
+        SEL result = sel_registerName(customGetter);
+        free(customGetter);
+        return result;
+    } else {
+        return sel_registerName(property_getName(prop));
+    }
+}
+
+
 // Returns the selector of the setter method for the given property.
-static SEL selectorOfSetter(objc_property_t prop) {
+SEL selectorOfSetter(objc_property_t prop) {
     char* customSetter = property_copyAttributeValue(prop, "S");
     if (customSetter) {
         SEL result = sel_registerName(customSetter);
@@ -42,7 +56,7 @@ static inline void* ivarAddress(id object, Ivar ivar) {
 
 
 
-@implementation NuModelPropertyInfo
+@implementation CBLPropertyInfo
 
 - (NSString*) description {
     return [NSString stringWithFormat: @"[%@.%@ <- doc.%@ ('%s')]",
@@ -50,14 +64,16 @@ static inline void* ivarAddress(id object, Ivar ivar) {
 }
 
 - (Class) propertyClass {
-    if (!_propertyClass && ivarType[0] == '@') {
-        NSString* className = [[NSString alloc] initWithBytes: ivarType+2
-                                                       length: strlen(ivarType)-3
-                                                     encoding: NSUTF8StringEncoding];
-        _propertyClass = NSClassFromString(className);
-        Assert(_propertyClass);
+    @synchronized(self) {
+        if (!_propertyClass && ivarType[0] == '@') {
+            NSString* className = [[NSString alloc] initWithBytes: ivarType+2
+                                                           length: strlen(ivarType)-3
+                                                         encoding: NSUTF8StringEncoding];
+            _propertyClass = NSClassFromString(className);
+            Assert(_propertyClass);
+        }
+        return _propertyClass;
     }
-    return _propertyClass;
 }
 
 @end
@@ -65,51 +81,52 @@ static inline void* ivarAddress(id object, Ivar ivar) {
 
 
 
-@implementation NuModel
+@implementation CBLObject
 {
     uint64_t _dirtyFlags;    // Bit-field that marks which properties (by index) have been changed
 }
 
 
-@synthesize documentID=_documentID, needsSave=_needsSave;
+@synthesize needsSave=_needsSave;
 #if DEBUG
-@synthesize dirtyFlags=_dirtyFlags;
+@synthesize dirtyFlags=_dirtyFlags; // used by unit tests
 #endif
 
 
-// Maps Class object -> NSArray of NuModelPropertyInfo
+// Maps Class object -> NSArray of CBLObjectPropertyInfo
 static NSMutableDictionary* sClassInfo;
 
 
+// The setter method that gets spliced in for persistent properties; sets .needsSave.)
 #define SETTER_BLOCK(OLD_IMP, FLAG, TYPE) \
-    ^void(__unsafe_unretained NuModel* receiver, TYPE value) { \
+    ^void(__unsafe_unretained CBLObject* receiver, TYPE value) { \
         if (!receiver->_dirtyFlags) [receiver setNeedsSave: YES]; \
         receiver->_dirtyFlags |= (FLAG); \
-        void (*_oldSetter)(NuModel* rcvr, SEL cmd, TYPE value) = (void*)(OLD_IMP); \
+        void (*_oldSetter)(CBLObject* rcvr, SEL cmd, TYPE value) = (void*)(OLD_IMP); \
         _oldSetter(receiver, setterSelector, value); \
     }
 
 
 + (void) initialize {
-    if (self == [NuModel class]) {
+    if (self == [CBLObject class]) {
         sClassInfo = [[NSMutableDictionary alloc] init];
         return;
     }
 
-    NuModelPropertyInfo* prevProperty = [[[self superclass] persistentPropertyInfo] lastObject];
+    // Iterate all properties defined in this class, looking for persistent ones
+    CBLPropertyInfo* prevProperty = [[[self superclass] persistentPropertyInfo] lastObject];
     uint8_t propertyIndex = prevProperty ? prevProperty->index+1 : 0;
-
     NSMutableArray* infos = $marray();
     objc_property_t* props = class_copyPropertyList(self, NULL);
     if (props) {
         for (objc_property_t* prop = props; *prop; ++prop) {
-            Log(@"    %s -> %s", property_getName(*prop), property_getAttributes(*prop));
+            //Log(@"    %s -> %s", property_getName(*prop), property_getAttributes(*prop));
             const char* ivarName = property_copyAttributeValue(*prop, "V");
             if (ivarName) {
                 if (strncmp(ivarName, kIvarPrefixStr, strlen(kIvarPrefixStr)) == 0) {
                     // Record info for this persistent property:
                     const char* docPropName = ivarName + strlen(kIvarPrefixStr);
-                    NuModelPropertyInfo* info = [[NuModelPropertyInfo alloc] init];
+                    CBLPropertyInfo* info = [[CBLPropertyInfo alloc] init];
                     info->index = propertyIndex;
                     info->definedInClass = self;
                     info->name = [[NSString alloc] initWithUTF8String: property_getName(*prop)];
@@ -158,6 +175,9 @@ static NSMutableDictionary* sClassInfo;
 }
 
 
+#pragma mark - PROPERTIES:
+
+
 // Called from spliced-in property setter the first time a persistent property is changed.
 - (void) setNeedsSave:(BOOL)needsSave {
     _needsSave = needsSave;
@@ -169,17 +189,17 @@ static NSMutableDictionary* sClassInfo;
 
 
 // Calls the block once for each persistent property, including inherited ones
-+ (void) forEachProperty: (void (^)(NuModelPropertyInfo*))block {
-    if (self != [NuModel class]) {
++ (void) forEachProperty: (void (^)(CBLPropertyInfo*))block {
+    if (self != [CBLObject class]) {
         [[self superclass] forEachProperty: block];
-        for (NuModelPropertyInfo* info in [self persistentPropertyInfo])
+        for (CBLPropertyInfo* info in [self persistentPropertyInfo])
             block(info);
     }
 }
 
 
 // Convert a value from raw JSON-parsed form into the type of the given property
-- (id) internalizeValue: (id)rawValue forProperty: (NuModelPropertyInfo*)info {
+- (id) internalizeValue: (id)rawValue forProperty: (CBLPropertyInfo*)info {
     Class propertyClass = info.propertyClass;
     if (!propertyClass) {
         // Scalar property. It must have an NSNumber value:
@@ -195,6 +215,7 @@ static NSMutableDictionary* sClassInfo;
     } else if ([rawValue isKindOfClass: propertyClass]) {
         return rawValue;
     } else {
+        // Value is of incompatible class, so don't return it:
         return nil;
     }
 }
@@ -208,8 +229,8 @@ static NSMutableDictionary* sClassInfo;
         value = [CBLJSON JSONObjectWithDate: value];
     else if ([value isKindOfClass: [NSDecimalNumber class]])
         value = [value stringValue];
-    else if ([value isKindOfClass: [NuModel class]])
-        value = ((NuModel*)value).documentID;
+    else if ([value isKindOfClass: [CBLNuModel class]])
+        value = ((CBLNuModel*)value).documentID;
     else if ([value isKindOfClass: [NSArray class]]) {
         if ([value isKindOfClass: [CBLModelArray class]])
             value = [value docIDs];
@@ -222,29 +243,24 @@ static NSMutableDictionary* sClassInfo;
 }
 
 
-- (id) persistentValueOfProperty: (NuModelPropertyInfo*)info {
-    id value = _box(ivarAddress(self, info->ivar), info->ivarType);
-    if (info->ivarType[0] == '@')
-        value = [self externalizeValue: value];
-    else if ([value doubleValue] == 0.0)
-        value = nil;
-    return value;
-}
-
-
 #define SETTER(TYPE, METHOD) \
     { TYPE v = (TYPE)[value METHOD]; \
       memcpy(dst, &v, sizeof(v)); }
 
 - (void) setPersistentProperties: (NSDictionary*)properties {
-    [[self class] forEachProperty:^(NuModelPropertyInfo *info) {
-        id value = properties[info->docProperty];
-        value = [self internalizeValue: value forProperty: info];
-        if (info->ivarType[0] == '@') {
-            object_setIvar(self, info->ivar, value);
+    // Tell KVO that all persistent properties may be changing:
+    [[self class] forEachProperty:^(CBLPropertyInfo *prop) {
+        [self willChangeValueForKey: prop->name];
+    }];
+
+    [[self class] forEachProperty:^(CBLPropertyInfo *prop) {
+        id value = properties[prop->docProperty];
+        value = [self internalizeValue: value forProperty: prop];
+        if (prop->ivarType[0] == '@') {
+            object_setIvar(self, prop->ivar, value);
         } else {
-            void* dst = ivarAddress(self, info->ivar);
-            switch (info->ivarType[0]) {
+            void* dst = ivarAddress(self, prop->ivar);
+            switch (prop->ivarType[0]) {
                 case 'B':   SETTER(bool,    boolValue); break;
                 case 'c':
                 case 'C':   SETTER(char,    charValue); break;
@@ -259,17 +275,37 @@ static NSMutableDictionary* sClassInfo;
                 case 'f':   SETTER(float,   floatValue); break;
                 case 'd':   SETTER(double,  doubleValue); break;
                 default:
-                    Assert(NO, @"Can't set ivar of type '%s' in %@", info->ivarType, info);
+                    Assert(NO, @"Can't set ivar of type '%s' in %@", prop->ivarType, prop);
                     break;
             }
         }
     }];
+
+    // Tell KVO that all persistent properties may have changed:
+    [[self class] forEachProperty:^(CBLPropertyInfo *prop) {
+        [self didChangeValueForKey: prop->name];
+    }];
+}
+
+
+- (id) persistentValueOfProperty: (CBLPropertyInfo*)info {
+    const char* addr = ivarAddress(self, info->ivar);
+    if (info->ivarType[0] == 'c' && *addr == 1) {
+        // Special case for BOOL, which encodes to the same type as char:
+        return $true;
+    }
+    id value = _box(addr, info->ivarType);
+    if (info->ivarType[0] == '@')
+        value = [self externalizeValue: value];
+    else if ([value doubleValue] == 0.0)
+        value = nil;
+    return value;
 }
 
 
 - (NSDictionary*) persistentProperties {
     NSMutableDictionary* properties = $mdict();
-    [[self class] forEachProperty:^(NuModelPropertyInfo *info) {
+    [[self class] forEachProperty:^(CBLPropertyInfo *info) {
         id value = [self persistentValueOfProperty: info];
         if (value)
             properties[info->docProperty] = value;
@@ -278,9 +314,9 @@ static NSMutableDictionary* sClassInfo;
 }
 
 
-- (BOOL) updatePersistentProperties: (NSMutableDictionary*)properties {
+- (BOOL) getPersistentPropertiesInto: (NSMutableDictionary*)properties {
     __block BOOL changed = NO;
-    [[self class] forEachProperty:^(NuModelPropertyInfo *info) {
+    [[self class] forEachProperty:^(CBLPropertyInfo *info) {
         uint64_t dirtyMask = 1llu << MIN(info->index, 63u);
         if (_dirtyFlags & dirtyMask) {
             id value = [self persistentValueOfProperty: info];

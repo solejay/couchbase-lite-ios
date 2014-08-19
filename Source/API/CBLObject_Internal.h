@@ -1,22 +1,23 @@
 //
-//  NuModel_Internal.h
+//  CBLObject_Internal.h
 //  CouchbaseLite
 //
 //  Created by Jens Alfke on 8/17/14.
 //
 //
 
-#import "NuModel.h"
+#import "CBLObject.h"
 #import <objc/runtime.h>
 
 
-@interface NuModelPropertyInfo : NSObject
+@interface CBLPropertyInfo : NSObject
 {
 @public
     Class definedInClass;       // Class that defines this property
     NSString* name;             // Property name
     NSString* docProperty;      // Document (JSON) property name
-    Ivar ivar;                  // Obj-C instance variable
+    objc_property_t property;   // Obj-C property metadata
+    Ivar ivar;                  // Obj-C instance variable metadata
     const char* ivarType;       // Encoded ivar type string (a la @encode)
     uint8_t index;              // Order in which property was declared (starts at 0 in base class)
     BOOL readOnly;              // Read-only property?
@@ -32,9 +33,11 @@
 
 
 
-@interface NuModel ()
+@interface CBLObject ()
 
 + (NSArray*) persistentPropertyInfo;
+
++ (void) forEachProperty: (void (^)(CBLPropertyInfo*))block;
 
 @property (readwrite) BOOL needsSave;
 
@@ -42,5 +45,13 @@
 @property (readonly) uint64_t dirtyFlags;
 #endif
 
+- (id) internalizeValue: (id)rawValue forProperty: (CBLPropertyInfo*)info;
+- (id) externalizeValue: (id)value;
+
 @end
 
+
+
+
+SEL selectorOfGetter(objc_property_t prop);
+SEL selectorOfSetter(objc_property_t prop);
