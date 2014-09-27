@@ -9,8 +9,14 @@
 #import "CBLNuModel.h"
 
 
-/** The API that CBLNuModel expects of the model factory. */
-@protocol CBLNuModelFactory <NSObject>
+@protocol CBLNuModelFactoryDelegate;
+
+
+/** An object that knows how to instantiate and track CBLNuModels.
+    It's also responsible for loading and saving, but delegates that.*/
+@interface CBLNuModelFactory : NSObject
+
+@property (nonatomic) id<CBLNuModelFactoryDelegate> delegate;
 
 /** Returns a model object for the given document ID.
     If a model has already been instantiated with the given ID, it must be returned (even if it's
@@ -40,17 +46,6 @@
 /** Immediately runs any pending autosaves for all models. */
 - (BOOL) autosaveAllModels: (NSError**)outError;
 
-@end
-
-
-@protocol CBLNuModelFactoryDelegate;
-
-
-/** Abstract implementation that uses a CBLCache to hold model objects.
-    Subclasses must still implement readPropertiesOfModel: and savePropertiesOfModel:. */
-@interface CBLNuModelFactory : NSObject <CBLNuModelFactory>
-
-@property (nonatomic) id<CBLNuModelFactoryDelegate> delegate;
 
 /** Instantiates a new concrete (non-fault) model object of the given class,
     and reads its properties. Can be overridden by subclasses. */
@@ -61,6 +56,7 @@
 @end
 
 
+/** An object that can load and save CBLNuModel objects' persistent state. */
 @protocol CBLNuModelFactoryDelegate <NSObject>
 
 - (BOOL) readPropertiesOfModel: (CBLNuModel*)model error: (NSError**)error;

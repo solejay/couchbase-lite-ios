@@ -7,19 +7,18 @@
 //
 
 #import "CBLObject.h"
-@protocol CBLNuModelFactory;
-@class CBL_Revision;
+@class CBLNuModelFactory, CBL_Revision;
 
 
 /** Abstract model object that represents a Couchbase Lite document in memory. */
 @interface CBLNuModel : CBLObject
 
-+ (instancetype) modelWithFactory: (id<CBLNuModelFactory>)factory
++ (instancetype) modelWithFactory: (CBLNuModelFactory*)factory
                        documentID: (NSString*)documentID;
 
-- (instancetype) initNewModelWithFactory: (id<CBLNuModelFactory>)factory;
+- (instancetype) initNewModelWithFactory: (CBLNuModelFactory*)factory;
 
-@property (readonly, nonatomic) id<CBLNuModelFactory> factory;
+@property (readonly, nonatomic) CBLNuModelFactory* factory;
 
 @property (readonly, nonatomic) NSString* documentID;
 @property (readonly, nonatomic) NSString* revisionID;
@@ -35,10 +34,10 @@
 
 // SUBCLASSES ONLY:
 
-- (instancetype) initWithFactory: (id<CBLNuModelFactory>)factory
+- (instancetype) initWithFactory: (CBLNuModelFactory*)factory
                       documentID: (NSString*)documentID;
 
-- (instancetype) initAsFaultWithFactory: (id<CBLNuModelFactory>)factory
+- (instancetype) initAsFaultWithFactory: (CBLNuModelFactory*)factory
                              documentID: (NSString*)documentID;
 
 - (void) awakeFromFault;
@@ -53,7 +52,7 @@
     As soon as any persistent property is accessed, the fault transforms itself into a true model
     object and loads its properties. */
 @interface CBLFault : CBLNuModel
-- (instancetype) initWithFactory: (id<CBLNuModelFactory>)factory
+- (instancetype) initWithFactory: (CBLNuModelFactory*)factory
                       documentID: (NSString*)documentID
                        realClass: (Class)realClass;
 @end

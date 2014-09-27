@@ -9,11 +9,33 @@
 #import "CBLObject_Internal.h"
 #import "CBLNuModel.h"
 #import "CBLNuModelFactory.h"
+#import "CBLQueryRowModel.h"
+#import "CouchbaseLite.h"
+#import "CBLInternal.h"
+#import "CouchbaseLitePrivate.h"
 #import "CBLJSON.h"
 #import "CBLCanonicalJSON.h"
 
 
 #if DEBUG
+
+
+static CBLDatabase* createEmptyDB(void) {
+    NSError* error;
+    CBLDatabase* db = [[CBLManager sharedInstance] createEmptyDatabaseNamed: @"numodel_test_db"
+                                                                      error: &error];
+    CAssert(db, @"Couldn't create test_db: %@", error);
+    return db;
+}
+
+
+static CBLDocument* createDocumentWithProperties(CBLDatabase* db,
+                                                 NSDictionary* properties) {
+    CBLDocument* doc = [db createDocument];
+    NSError* error;
+    CAssert([doc putProperties: properties error: &error], @"Couldn't save: %@", error);  // save it!
+    return doc;
+}
 
 
 @interface CBLObjectTest : CBLObject
@@ -212,6 +234,47 @@ TestCase(CBLNuModel) {
     AssertEqual(doc2.greeting, @"bye");
     AssertEq(doc2.size, 14);
     Assert(!doc2.isFault);
+}
+
+
+
+@interface TestRow : CBLQueryRowModel
+@property (readonly) int year;
+@property (readonly) NSString* title;
+@property (readonly) float rating;
+@end
+
+@implementation TestRow
+
+CBLSynthesizeAs(year,   key0);
+CBLSynthesizeAs(title,  key1);
+CBLSynthesize(rating);
+
+@end
+
+
+TestCase(CBLQueryRowModel) {
+    CBLDatabase* db = createEmptyDB();
+
+    CBLView* view = [db viewNamed: @"vu"];
+    [view setMapBlock: MAPBLOCK({
+        emit(@[doc[@"year"], doc[@"title"]], @{@"rating": doc[@"rating"]});
+    }) version: @"1"];
+
+    createDocumentWithProperties(db, @{@"year": @1977, @"title": @"Star Wars", @"rating": @0.9});
+
+    int rowCount = 0;
+    CBLQuery* query = [view createQuery];
+    for (CBLQueryRow* row in [query run: NULL]) {
+        TestRow* testRow = [[TestRow alloc] initWithQueryRow: row];
+        AssertEq(testRow.year, 1977);
+        AssertEqual(testRow.title, @"Star Wars");
+        AssertEq(testRow.rating, 0.9f);
+        ++rowCount;
+    }
+    AssertEq(rowCount, 1);
+
+    CAssert([db close]);
 }
 
 

@@ -36,42 +36,30 @@
 }
 
 
-- (instancetype) initWithFactory: (id<CBLNuModelFactory>)factory
+- (instancetype) initWithFactory: (CBLNuModelFactory*)factory
                       documentID: (NSString*)documentID
                        realClass: (Class)realClass
 {
     self = [super initWithFactory: factory documentID: documentID];
     if (self) {
         _realClass = realClass;
-        Log(@"INIT %@", self);
+        LogTo(Model, @"INIT %@", self);
     }
     return self;
 }
 
 
-- (id)forwardingTargetForSelector:(SEL)aSelector {
+- (void) forwardInvocation: (NSInvocation*)invocation {
     @synchronized(self) {
-        if (self.isFault) {
+        if (self.isFault) {                      // in case of simultaneous calls
             Class realClass = _realClass;
-            if (![realClass instancesRespondToSelector: aSelector])
-                return [super forwardingTargetForSelector: aSelector];
-            Log(@"AWAKE %@ ...", self);
+            LogTo(Model, @"AWAKE %@ ...", self);
             _realClass = nil;                   // zero out state before transforming class
             object_setClass(self, realClass);  // SHAZAM! Transform into the real object
             [self awakeFromFault];
         }
     }
-#if 0
-    return self; // doesn't work
-#else
-    // This is a hack -- I really want to return self, because the message should be re-sent to
-    // self now that the class has changed. But the Obj-C runtime treats a return value of self
-    // as a failure, the same as returning nil. As a workaround, create a little 'bouncer'
-    // object that will do nothing but forward back to me.
-    CBLBouncer* bouncer = [[CBLBouncer alloc] init];
-    bouncer->_target = self;
-    return bouncer;
-#endif
+    [invocation invoke];
 }
 
 
@@ -113,14 +101,14 @@
             isNew=_isNew;
 
 
-+ (instancetype) modelWithFactory: (id<CBLNuModelFactory>)factory
++ (instancetype) modelWithFactory: (CBLNuModelFactory*)factory
                        documentID: (NSString*)documentID
 {
     return [factory modelWithDocumentID: documentID ofClass: self asFault: NO error: nil];
 }
 
 
-- (instancetype) initWithFactory: (id<CBLNuModelFactory>)factory
+- (instancetype) initWithFactory: (CBLNuModelFactory*)factory
                       documentID: (NSString*)documentID
 {
     self = [super init];
@@ -132,7 +120,7 @@
 }
 
 
-- (instancetype) initAsFaultWithFactory: (id<CBLNuModelFactory>)factory
+- (instancetype) initAsFaultWithFactory: (CBLNuModelFactory*)factory
                              documentID: (NSString*)documentID
 {
     Class realClass = [self class];
@@ -141,7 +129,7 @@
 }
 
 
-- (instancetype) initNewModelWithFactory: (id<CBLNuModelFactory>)factory {
+- (instancetype) initNewModelWithFactory: (CBLNuModelFactory*)factory {
     self = [super init];
     if (self) {
         _factory = factory;

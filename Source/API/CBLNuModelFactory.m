@@ -76,7 +76,7 @@
                                   ofClass: (Class)ofClass
                                     error: (NSError**)outError
 {
-    CBLNuModel* model =  [[ofClass alloc] initWithFactory: self documentID: documentID];
+    CBLNuModel* model = [[ofClass alloc] initWithFactory: self documentID: documentID];
     if (![self readPropertiesOfModel: model error: outError])
         return nil;
     return model;

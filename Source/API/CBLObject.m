@@ -182,7 +182,7 @@ static NSMutableDictionary* sClassInfo;
 - (void) setNeedsSave:(BOOL)needsSave {
     _needsSave = needsSave;
     if (needsSave)
-        Log(@"*** %@ is now dirty", self);
+        LogTo(Model, @"*** %@ is now dirty", self);
     else
         _dirtyFlags = 0;
 }
@@ -247,6 +247,33 @@ static NSMutableDictionary* sClassInfo;
     { TYPE v = (TYPE)[value METHOD]; \
       memcpy(dst, &v, sizeof(v)); }
 
+- (void) setValue:(id)value forPersistentProperty: (CBLPropertyInfo*)prop {
+    value = [self internalizeValue: value forProperty: prop];
+    if (prop->ivarType[0] == '@') {
+        object_setIvar(self, prop->ivar, value);
+    } else {
+        void* dst = ivarAddress(self, prop->ivar);
+        switch (prop->ivarType[0]) {
+            case 'B':   SETTER(bool,    boolValue); break;
+            case 'c':
+            case 'C':   SETTER(char,    charValue); break;
+            case 's':
+            case 'S':   SETTER(short,   shortValue); break;
+            case 'i':
+            case 'I':   SETTER(int,     intValue); break;
+            case 'l':
+            case 'L':   SETTER(int32_t, intValue); break;
+            case 'q':
+            case 'Q':   SETTER(int64_t, longLongValue); break;
+            case 'f':   SETTER(float,   floatValue); break;
+            case 'd':   SETTER(double,  doubleValue); break;
+            default:
+                Assert(NO, @"Can't set ivar of type '%s' in %@", prop->ivarType, prop);
+                break;
+        }
+    }
+}
+
 - (void) setPersistentProperties: (NSDictionary*)properties {
     // Tell KVO that all persistent properties may be changing:
     [[self class] forEachProperty:^(CBLPropertyInfo *prop) {
@@ -254,31 +281,7 @@ static NSMutableDictionary* sClassInfo;
     }];
 
     [[self class] forEachProperty:^(CBLPropertyInfo *prop) {
-        id value = properties[prop->docProperty];
-        value = [self internalizeValue: value forProperty: prop];
-        if (prop->ivarType[0] == '@') {
-            object_setIvar(self, prop->ivar, value);
-        } else {
-            void* dst = ivarAddress(self, prop->ivar);
-            switch (prop->ivarType[0]) {
-                case 'B':   SETTER(bool,    boolValue); break;
-                case 'c':
-                case 'C':   SETTER(char,    charValue); break;
-                case 's':
-                case 'S':   SETTER(short,   shortValue); break;
-                case 'i':
-                case 'I':   SETTER(int,     intValue); break;
-                case 'l':
-                case 'L':   SETTER(int32_t, intValue); break;
-                case 'q':
-                case 'Q':   SETTER(int64_t, longLongValue); break;
-                case 'f':   SETTER(float,   floatValue); break;
-                case 'd':   SETTER(double,  doubleValue); break;
-                default:
-                    Assert(NO, @"Can't set ivar of type '%s' in %@", prop->ivarType, prop);
-                    break;
-            }
-        }
+        [self setValue: properties[prop->docProperty] forPersistentProperty: prop];
     }];
 
     // Tell KVO that all persistent properties may have changed:

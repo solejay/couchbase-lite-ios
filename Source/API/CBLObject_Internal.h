@@ -10,6 +10,7 @@
 #import <objc/runtime.h>
 
 
+/** Metadata about a persistent property defined by a CBLObject subclass. */
 @interface CBLPropertyInfo : NSObject
 {
 @public
@@ -47,6 +48,8 @@
 
 - (id) internalizeValue: (id)rawValue forProperty: (CBLPropertyInfo*)info;
 - (id) externalizeValue: (id)value;
+
+- (void) setValue:(id)value forPersistentProperty: (CBLPropertyInfo*)prop;
 
 @end
 

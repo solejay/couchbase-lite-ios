@@ -473,6 +473,9 @@
 		27BDA81E181973EF00F27A11 /* CBLBulkDownloader.h in Headers */ = {isa = PBXBuildFile; fileRef = 27BDA81C181973EF00F27A11 /* CBLBulkDownloader.h */; };
 		27BDA81F181973EF00F27A11 /* CBLBulkDownloader.m in Sources */ = {isa = PBXBuildFile; fileRef = 27BDA81D181973EF00F27A11 /* CBLBulkDownloader.m */; };
 		27BDA820181973EF00F27A11 /* CBLBulkDownloader.m in Sources */ = {isa = PBXBuildFile; fileRef = 27BDA81D181973EF00F27A11 /* CBLBulkDownloader.m */; };
+		27C03F9E19D5D33500704DA0 /* CBLQueryRowModel.h in Headers */ = {isa = PBXBuildFile; fileRef = 27C03F9C19D5D33500704DA0 /* CBLQueryRowModel.h */; };
+		27C03F9F19D5D33500704DA0 /* CBLQueryRowModel.m in Sources */ = {isa = PBXBuildFile; fileRef = 27C03F9D19D5D33500704DA0 /* CBLQueryRowModel.m */; };
+		27C03FA019D5D33500704DA0 /* CBLQueryRowModel.m in Sources */ = {isa = PBXBuildFile; fileRef = 27C03F9D19D5D33500704DA0 /* CBLQueryRowModel.m */; };
 		27C5305414DF3A050078F886 /* CBLMultipartUploader.h in Headers */ = {isa = PBXBuildFile; fileRef = 27C5305214DF3A050078F886 /* CBLMultipartUploader.h */; };
 		27C5305514DF3A050078F886 /* CBLMultipartUploader.m in Sources */ = {isa = PBXBuildFile; fileRef = 27C5305314DF3A050078F886 /* CBLMultipartUploader.m */; };
 		27C5305614DF3A050078F886 /* CBLMultipartUploader.m in Sources */ = {isa = PBXBuildFile; fileRef = 27C5305314DF3A050078F886 /* CBLMultipartUploader.m */; };
@@ -1231,6 +1234,8 @@
 		27B945B117692E2000B2DF2D /* CBLModel+Properties.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "CBLModel+Properties.m"; sourceTree = "<group>"; };
 		27BDA81C181973EF00F27A11 /* CBLBulkDownloader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLBulkDownloader.h; sourceTree = "<group>"; };
 		27BDA81D181973EF00F27A11 /* CBLBulkDownloader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CBLBulkDownloader.m; sourceTree = "<group>"; };
+		27C03F9C19D5D33500704DA0 /* CBLQueryRowModel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLQueryRowModel.h; sourceTree = "<group>"; };
+		27C03F9D19D5D33500704DA0 /* CBLQueryRowModel.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CBLQueryRowModel.m; sourceTree = "<group>"; };
 		27C5305214DF3A050078F886 /* CBLMultipartUploader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBLMultipartUploader.h; sourceTree = "<group>"; };
 		27C5305314DF3A050078F886 /* CBLMultipartUploader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = CBLMultipartUploader.m; sourceTree = "<group>"; };
 		27C706401486BBD500F0F099 /* CBL_Server.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CBL_Server.h; sourceTree = "<group>"; };
@@ -1632,6 +1637,8 @@
 			children = (
 				27E25A0B199ECC87004EEDB6 /* CBLObject.h */,
 				27E25A0C199ECC87004EEDB6 /* CBLObject.m */,
+				27C03F9C19D5D33500704DA0 /* CBLQueryRowModel.h */,
+				27C03F9D19D5D33500704DA0 /* CBLQueryRowModel.m */,
 				27E25A1319A17BF8004EEDB6 /* CBLObject_Internal.h */,
 				27E25A1419A26480004EEDB6 /* CBLNuModel.h */,
 				27E25A1519A26480004EEDB6 /* CBLNuModel.m */,
@@ -2488,6 +2495,7 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				27C03F9E19D5D33500704DA0 /* CBLQueryRowModel.h in Headers */,
 				270B3E201489390000E0A926 /* CouchbaseLite.h in Headers */,
 				277B5D331821A8380088881E /* yajl_bytestack.h in Headers */,
 				27821BBE14906FB60099B373 /* CouchbaseLitePrefix.h in Headers */,
@@ -3268,6 +3276,7 @@
 				277EF45917F4DF3700F7B7F7 /* stem_UTF_8_danish.c in Sources */,
 				277EF45317F4DF3700F7B7F7 /* stem_ISO_8859_2_romanian.c in Sources */,
 				277EF44717F4DF3700F7B7F7 /* stem_ISO_8859_1_porter.c in Sources */,
+				27C03F9F19D5D33500704DA0 /* CBLQueryRowModel.m in Sources */,
 				277EF42717F4DF3700F7B7F7 /* api_sq3.c in Sources */,
 				277EF48317F4DF3700F7B7F7 /* stem_UTF_8_swedish.c in Sources */,
 				277EF44417F4DF3700F7B7F7 /* stem_ISO_8859_1_norwegian.c in Sources */,
@@ -3484,6 +3493,7 @@
 				277EF42B17F4DF3700F7B7F7 /* utilities_sq3.c in Sources */,
 				27726AB11889835F00AE6931 /* CBLJSON.m in Sources */,
 				277EF43317F4DF3700F7B7F7 /* stem_ISO_8859_1_english.c in Sources */,
+				27C03FA019D5D33500704DA0 /* CBLQueryRowModel.m in Sources */,
 				277EF48117F4DF3700F7B7F7 /* stem_UTF_8_spanish.c in Sources */,
 				277EF48717F4DF3700F7B7F7 /* stem_UTF_8_turkish.c in Sources */,
 				277EF46017F4DF3700F7B7F7 /* stem_UTF_8_english.c in Sources */,
