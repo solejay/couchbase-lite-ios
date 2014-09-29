@@ -31,6 +31,13 @@
     This flag is cleared automatically when the .persistentProperties property is set. */
 @property (readonly, nonatomic) BOOL needsSave;
 
+
+
+@property (readonly, nonatomic) BOOL isFault;
+
+// protected:
+- (void) awokeFromFault;
+
 @end
 
 

@@ -35,6 +35,10 @@
 
 
 @interface CBLObject ()
+{
+    @protected
+    Class _realClass; // used only by CBLFault
+}
 
 + (NSArray*) persistentPropertyInfo;
 
@@ -51,8 +55,19 @@
 
 - (void) setValue:(id)value forPersistentProperty: (CBLPropertyInfo*)prop;
 
+- (void) turnIntoFault;
+
 @end
 
+
+
+// A CBLObject subclass used to represent an object of a different class that hasn't yet had its
+// data loaded. After the object's initializer finishes, its class is swizzled to CBLFault.
+// CBLFault has a -forwardInvocation: method that handles any unknown method (i.e. one declared
+// by the real class) by switching the object back to its real class and loading its data.
+@interface CBLFault : CBLObject
+- (BOOL) isReallyKindOfClass: (Class)klass;
+@end
 
 
 

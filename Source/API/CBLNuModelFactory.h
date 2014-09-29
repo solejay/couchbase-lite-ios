@@ -46,13 +46,6 @@
 /** Immediately runs any pending autosaves for all models. */
 - (BOOL) autosaveAllModels: (NSError**)outError;
 
-
-/** Instantiates a new concrete (non-fault) model object of the given class,
-    and reads its properties. Can be overridden by subclasses. */
-- (CBLNuModel*) createModelWithDocumentID: (NSString*)documentID
-                                  ofClass: (Class)ofClass
-                                    error: (NSError**)outError;
-
 @end
 
 

@@ -7,6 +7,7 @@
 //
 
 #import "CBLNuModelFactory.h"
+#import "CBLObject_Internal.h"
 #import "CBLCache.h"
 
 
@@ -31,8 +32,7 @@
 @synthesize delegate=_delegate, unsavedModels=_unsavedModels;
 
 
-- (instancetype)init
-{
+- (instancetype) init {
     self = [super init];
     if (self) {
         _cache = [[CBLCache alloc] initWithRetainLimit: 20];
@@ -49,13 +49,15 @@
 {
     CBLNuModel* model = [_cache resourceWithCacheKey: documentID];
     if (!model) {
-        if (asFault)
-            model = [[ofClass alloc] initAsFaultWithFactory: self documentID: documentID];
-        else
-            model = [self createModelWithDocumentID: documentID ofClass: ofClass error: outError];
+        model = [[ofClass alloc] initWithFactory: self documentID: documentID];
         if (!model)
             return nil;
-        [_cache addResource: model];
+        if (!asFault)
+            if (![self readPropertiesOfModel: model error: outError])
+                return nil;
+        [self addNewModel: model];
+        if (asFault)
+            [model turnIntoFault];
     }
     Assert(!ofClass || model.isFault || [model isKindOfClass: ofClass],
            @"Asked for model of doc %@ as a %@, but it's already instantiated as a %@",
@@ -67,17 +69,6 @@
 - (CBLNuModel*) existingModelWithDocumentID: (NSString*)documentID {
     CBLNuModel* model = [_cache resourceWithCacheKey: documentID];
     if (model.isFault)
-        return nil;
-    return model;
-}
-
-
-- (CBLNuModel*) createModelWithDocumentID: (NSString*)documentID
-                                  ofClass: (Class)ofClass
-                                    error: (NSError**)outError
-{
-    CBLNuModel* model = [[ofClass alloc] initWithFactory: self documentID: documentID];
-    if (![self readPropertiesOfModel: model error: outError])
         return nil;
     return model;
 }

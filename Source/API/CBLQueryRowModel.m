@@ -41,6 +41,7 @@ static NSMutableDictionary* sMetadata;
     if (self == [CBLQueryRowModel class]) {
         sMetadata = [NSMutableDictionary new];
     } else {
+        // Analyze the instance properties and figure out how they correspond to the key/value:
         CBLQueryRowModelMetadata* metadata = [CBLQueryRowModelMetadata new];
         NSMutableDictionary* keyProperties = [NSMutableDictionary new];
         NSMutableDictionary* valueProperties = [NSMutableDictionary new];
@@ -82,36 +83,41 @@ static NSMutableDictionary* sMetadata;
     self = [super init];
     if (self) {
         _row = row;
-
-        CBLQueryRowModelMetadata* meta = [[self class] propertyMetadata];
-        id key = row.key;
-        if (meta->keyProperty)
-            [self setValue: key forPersistentProperty: meta->keyProperty];
-        NSInteger index = 0;
-        for (id keyItem in $castIf(NSArray, key)) {
-            CBLPropertyInfo* info = meta->keyProperties[@(index++)];
-            if (info)
-                [self setValue: keyItem forPersistentProperty: info];
-        }
-
-        id value = row.value;
-        if (value) {
-            if (meta->valueProperty)
-                [self setValue: value forPersistentProperty: meta->valueProperty];
-            index = 0;
-            for (id valueItem in $castIf(NSArray, value)) {
-                CBLPropertyInfo* info = meta->valueProperties[@(index++)];
-                if (info)
-                    [self setValue: valueItem forPersistentProperty: info];
-            }
-            for (id valueProp in $castIf(NSDictionary, value)) {
-                CBLPropertyInfo* info = meta->valueProperties[valueProp];
-                if (info)
-                    [self setValue: [value objectForKey: valueProp] forPersistentProperty: info];
-            }
-        }
+        [self turnIntoFault];  // Avoid doing any work until/unless my properties are accessed
     }
     return self;
 }
+
+
+- (void) awokeFromFault {
+    CBLQueryRowModelMetadata* meta = [[self class] propertyMetadata];
+    id key = _row.key;
+    if (meta->keyProperty)
+        [self setValue: key forPersistentProperty: meta->keyProperty];
+    NSInteger index = 0;
+    for (id keyItem in $castIf(NSArray, key)) {
+        CBLPropertyInfo* info = meta->keyProperties[@(index++)];
+        if (info)
+            [self setValue: keyItem forPersistentProperty: info];
+    }
+
+    id value = _row.value;
+    if (value) {
+        if (meta->valueProperty)
+            [self setValue: value forPersistentProperty: meta->valueProperty];
+        index = 0;
+        for (id valueItem in $castIf(NSArray, value)) {
+            CBLPropertyInfo* info = meta->valueProperties[@(index++)];
+            if (info)
+                [self setValue: valueItem forPersistentProperty: info];
+        }
+        for (id valueProp in $castIf(NSDictionary, value)) {
+            CBLPropertyInfo* info = meta->valueProperties[valueProp];
+            if (info)
+                [self setValue: [value objectForKey: valueProp] forPersistentProperty: info];
+        }
+    }
+}
+
 
 @end

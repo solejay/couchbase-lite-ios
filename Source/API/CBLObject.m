@@ -333,4 +333,73 @@ static NSMutableDictionary* sClassInfo;
 }
 
 
+#pragma mark - FAULTS:
+
+
+- (BOOL) isFault {
+    return NO;
+}
+
+
+- (void) turnIntoFault {
+    @synchronized(self) {
+        if (!_realClass) {
+            _realClass = [self class];
+            object_setClass(self, [CBLFault class]);  // SHAZAM! Transform into a fault
+        }
+    }
+}
+
+
+- (void) awokeFromFault {
+    // nothing to do; subclasses should override this
+}
+
+
+@end
+
+
+
+
+@implementation CBLFault
+
+
+- (void) forwardInvocation: (NSInvocation*)invocation {
+    @synchronized(self) {
+        if (_realClass) {                      // in case of simultaneous calls
+            LogTo(Model, @"AWAKE %@ ...", self);
+            object_setClass(self, _realClass);  // SHAZAM! Transform into the real object
+            _realClass = nil;                   // zero out state before transforming class
+            [self awokeFromFault];
+        }
+    }
+    [invocation invoke];
+}
+
+
+- (NSMethodSignature*) methodSignatureForSelector: (SEL)selector {
+    return [_realClass instanceMethodSignatureForSelector: selector];
+}
+
+
+- (BOOL) isReallyKindOfClass: (Class)klass {
+    return [_realClass isSubclassOfClass: klass];
+}
+
+
+- (BOOL) isFault {
+    return YES;
+}
+
+
+- (void) turnIntoFault {
+    // I am already a fault
+}
+
+
+- (NSString*) description {
+    return [NSString stringWithFormat: @"%@/%@", self.class, _realClass];
+}
+
+
 @end

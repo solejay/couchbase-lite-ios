@@ -13,76 +13,6 @@
 #import "CouchbaseLitePrivate.h"
 
 
-// Tiny class just used by CBLFault to forward messages
-@interface CBLBouncer : NSObject
-{
-    @public
-    id _target;
-}
-@end
-
-@implementation CBLBouncer
-- (id)forwardingTargetForSelector:(SEL)aSelector {
-    return _target;
-}
-@end
-
-
-
-
-@implementation CBLFault
-{
-    Class _realClass;
-}
-
-
-- (instancetype) initWithFactory: (CBLNuModelFactory*)factory
-                      documentID: (NSString*)documentID
-                       realClass: (Class)realClass
-{
-    self = [super initWithFactory: factory documentID: documentID];
-    if (self) {
-        _realClass = realClass;
-        LogTo(Model, @"INIT %@", self);
-    }
-    return self;
-}
-
-
-- (void) forwardInvocation: (NSInvocation*)invocation {
-    @synchronized(self) {
-        if (self.isFault) {                      // in case of simultaneous calls
-            Class realClass = _realClass;
-            LogTo(Model, @"AWAKE %@ ...", self);
-            _realClass = nil;                   // zero out state before transforming class
-            object_setClass(self, realClass);  // SHAZAM! Transform into the real object
-            [self awakeFromFault];
-        }
-    }
-    [invocation invoke];
-}
-
-
-- (NSMethodSignature*) methodSignatureForSelector: (SEL)selector {
-    return [_realClass instanceMethodSignatureForSelector: selector];
-}
-
-
-- (BOOL) isFault {
-    return YES;
-}
-
-
-- (NSString*) description {
-    return [NSString stringWithFormat: @"%@/%@[%@]", self.class, _realClass, self.documentID];
-}
-
-
-@end
-
-
-
-
 @interface CBLNuModel ()
 @property (readwrite) NSString* revisionID;
 @property (readwrite) BOOL deleted;
@@ -117,15 +47,6 @@
         _documentID = documentID;
     }
     return self;
-}
-
-
-- (instancetype) initAsFaultWithFactory: (CBLNuModelFactory*)factory
-                             documentID: (NSString*)documentID
-{
-    Class realClass = [self class];
-    object_setClass(self, [CBLFault class]);  // SHAZAM! Transform into a fault
-    return [(CBLFault*)self initWithFactory: factory documentID: documentID realClass: realClass];
 }
 
 
@@ -219,16 +140,11 @@
 }
 
 
-
 #pragma mark - FAULTS:
 
 
-- (BOOL) isFault {
-    return NO;
-}
-
-
-- (void) awakeFromFault {
+- (void) awokeFromFault {
+    [super awokeFromFault];
     NSError* error;
     if (![_factory readPropertiesOfModel: self error: nil])
         Warn(@"Error reading %@ from fault: %@", self, error);
