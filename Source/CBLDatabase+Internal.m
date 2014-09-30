@@ -239,8 +239,10 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
     // Give SQLCipher the encryption key, if provided:
     if (encryptionKey) {
         // http://sqlcipher.net/sqlcipher-api/#key
+        // Unfortunately this pragma is simply a no-op if SQLCipher isn't available, so we can't
+        // tell whether it actually did anything.
         if (![_fmdb executeUpdate: $sprintf(@"PRAGMA key = \"x'%@'\"", encryptionKey.hexData)]) {
-            Warn(@"CBLDatabase: Couldn't give encryption key; SQLite may not be built with SQLCipher");
+            Warn(@"CBLDatabase: Couldn't give encryption key");
             if (outError) *outError = self.fmdbError;
             return NO;
         }
