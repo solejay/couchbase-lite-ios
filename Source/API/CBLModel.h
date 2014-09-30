@@ -11,6 +11,7 @@
 @class CBLAttachment, CBLDatabase, CBLDocument;
 
 
+NS_REQUIRES_PROPERTY_DEFINITIONS  // Don't let compiler auto-synthesize properties in subclasses
 /** Generic model class for CouchbaseLite documents.
     There's a 1::1 mapping between these and CBLDocuments; call +modelForDocument: to get (or create) a model object for a document, and .document to get the document of a model.
     You should subclass this and declare properties in the subclass's @@interface. As with NSManagedObject, you don't need to implement their accessor methods or declare instance variables; simply note them as '@@dynamic' in the class @@implementation. The property value will automatically be fetched from or stored to the document, using the same name.
@@ -185,6 +186,11 @@ NS_DESIGNATED_INITIALIZER
     In general you'll find it easier to implement the '+propertyItemClass' method(s) rather
     than overriding this one. */
 + (Class) itemClassForArrayProperty: (NSString*)property;
+
+/** The type of document. This is optional, but is commonly used in document databases 
+    to distinguish different types of documents. CBLModelFactory can use this property to 
+    determine what CBLModel subclass to instantiate for a document. */
+@property (copy, nonatomic) NSString* type;
 
 @end
 

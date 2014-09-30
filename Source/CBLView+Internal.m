@@ -17,7 +17,7 @@
 #import "CBLInternal.h"
 #import "CouchbaseLitePrivate.h"
 #import "CBLCollateJSON.h"
-#import "CBLCanonicalJSON.h"
+#import "CBJSONEncoder.h"
 #import "CBLMisc.h"
 #import "CBLGeometry.h"
 
@@ -50,6 +50,27 @@ static void CBLComputeFTSRank(sqlite3_context *pCtx, int nVal, sqlite3_value **a
 @property (readonly, nonatomic) CBLGeoRect rect;
 @property (readonly, nonatomic) NSData* geoJSONData;
 @end
+
+
+@implementation CBLQueryOptions
+
+@synthesize startKey, endKey, startKeyDocID, endKeyDocID, keys, fullTextQuery, filter;
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        limit = kCBLQueryOptionsDefaultLimit;
+        inclusiveStart = YES;
+        inclusiveEnd = YES;
+        fullTextRanking = YES;
+        // everything else will default to nil/0/NO
+    }
+    return self;
+}
+
+@end
+
+
 
 
 @implementation CBLView (Internal)
@@ -100,7 +121,12 @@ static void CBLComputeFTSRank(sqlite3_context *pCtx, int nVal, sqlite3_value **a
     }
 
     // Version string is based on a digest of the properties:
-    NSString* version = CBLHexSHA1Digest([CBLCanonicalJSON canonicalData: viewProps]);
+    NSError* error;
+    NSString* version = CBLHexSHA1Digest([CBJSONEncoder canonicalEncoding: viewProps error: &error]);
+    if (error) {
+        Warn(@"View %@ has invalid JSON values: %@", _name, error);
+        return NO;
+    }
 
     [self setMapBlock: mapBlock reduceBlock: reduceBlock version: version];
 
@@ -225,13 +251,14 @@ static inline NSData* toJSONData( UU id object ) {
         const SequenceNumber forViewLastSequence = forView.lastSequenceIndexed;
         if (forView && forViewLastSequence >= dbMaxSequence)
             return kCBLStatusNotModified;
-
+        
         // Check whether we need to update at all,
         // and remove obsolete emitted results from the 'maps' table:
         SequenceNumber minLastSequence = dbMaxSequence;
         SequenceNumber viewLastSequence[views.count];
         unsigned deleted = 0;
         int i = 0;
+        NSMutableDictionary* viewTotalRows = [[NSMutableDictionary alloc] init];
         NSMutableArray* mapBlocks = [[NSMutableArray alloc] initWithCapacity: views.count];
         for (CBLView* view in views) {
             CBLMapBlock mapBlock = view.mapBlock;
@@ -243,6 +270,9 @@ static inline NSData* toJSONData( UU id object ) {
                 Warn(@"%@ does not exist in the database!", view);
                 return kCBLStatusNotFound;
             }
+            
+            NSUInteger totalRows = view.totalRows;
+            viewTotalRows[@(viewID)] = @(totalRows);
 
             SequenceNumber last = (view==forView) ? forViewLastSequence : view.lastSequenceIndexed;
             viewLastSequence[i++] = last;
@@ -264,7 +294,15 @@ static inline NSData* toJSONData( UU id object ) {
                 }
                 if (!ok)
                     return self.lastDbError;
-                deleted += _fmdb.changes;
+                
+                // Update #deleted rows
+                int changes = _fmdb.changes;
+                deleted += changes;
+                
+                // Only count these deletes as changes if this isn't a view reset to 0
+                if (last != 0) {
+                    viewTotalRows[@(viewID)] = @([viewTotalRows[@(viewID)] intValue] - changes);
+                }
             }
         }
         if (minLastSequence == dbMaxSequence)
@@ -286,8 +324,10 @@ static inline NSData* toJSONData( UU id object ) {
                                forSequence: sequence];
             if (status != kCBLStatusOK)
                 emitStatus = status;
-            else
+            else {
+                viewTotalRows[@(curView.viewID)] = @([viewTotalRows[@(curView.viewID)] intValue] + 1);
                 inserted++;
+            }
         };
 
         // Now scan every revision added since the last time the views were indexed:
@@ -341,6 +381,10 @@ static inline NSData* toJSONData( UU id object ) {
                         for (CBLView* view in views) {
                             [_fmdb executeUpdate: @"DELETE FROM maps WHERE view_id=? AND sequence=?",
                                                  @(view.viewID), @(oldSequence)];
+                            int changes = _fmdb.changes;
+                            deleted += changes;
+                            viewTotalRows[@(view.viewID)] =
+                                @([viewTotalRows[@(view.viewID)] intValue] - changes);
                         }
                         if (CBLCompareRevIDs(oldRevID, revID) > 0) {
                             // It still 'wins' the conflict, so it's the one that
@@ -392,13 +436,15 @@ static inline NSData* toJSONData( UU id object ) {
         }
         [r close];
         
-        // Finally, record the last revision sequence number that was indexed:
+        // Finally, record the last revision sequence number that was indexed and update #rows:
         for (CBLView* view in views) {
-            if (![_fmdb executeUpdate: @"UPDATE views SET lastSequence=? WHERE view_id=?",
-                                       @(dbMaxSequence), @(view.viewID)])
+            int newTotalRows = [viewTotalRows[@(view.viewID)] intValue];
+            Assert(newTotalRows >= 0);
+            if (![_fmdb executeUpdate: @"UPDATE views SET lastSequence=?, total_docs=? WHERE view_id=?",
+                                       @(dbMaxSequence), @(newTotalRows), @(view.viewID)])
                 return self.lastDbError;
         }
-
+        
         LogTo(View, @"...Finished re-indexing (%@) to #%lld (deleted %u, added %u)",
               viewNames(views), dbMaxSequence, deleted, inserted);
         return kCBLStatusOK;

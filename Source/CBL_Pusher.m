@@ -24,7 +24,7 @@
 #import "CouchbaseLitePrivate.h"
 #import "CBLInternal.h"
 #import "CBLMisc.h"
-#import "CBLCanonicalJSON.h"
+#import "CBJSONEncoder.h"
 #import "CBLRevision.h"
 #import "CBLDocument.h"
 
@@ -392,7 +392,7 @@ CBLStatus CBLStatusFromBulkDocsResponseItem(NSDictionary* item) {
     // in the JSON, because CouchDB expects the MIME bodies to appear in that same order (see #133).
     CBLMultipartWriter* bodyStream = nil;
     NSDictionary* attachments = rev.attachments;
-    for (NSString* attachmentName in [CBLCanonicalJSON orderedKeys: attachments]) {
+    for (NSString* attachmentName in [CBJSONEncoder orderedKeys: attachments]) {
         NSDictionary* attachment = attachments[attachmentName];
         if (attachment[@"follows"]) {
             if (!bodyStream) {
@@ -402,7 +402,13 @@ CBLStatus CBLStatusFromBulkDocsResponseItem(NSDictionary* item) {
                 [bodyStream setNextPartsHeaders: @{@"Content-Type": @"application/json"}];
                 // Use canonical JSON encoder so that _attachments keys will be written in the
                 // same order that this for loop is processing the attachments.
-                NSData* json = [CBLCanonicalJSON canonicalData: rev.properties];
+                NSError* error;
+                NSData* json = [CBJSONEncoder canonicalEncoding: rev.properties error: &error];
+                if (error) {
+                    Warn(@"%@: Creating canonical JSON data got an error: %@", self, error);
+                    return NO;
+                }
+
                 if (self.canSendCompressedRequests)
                     [bodyStream addGZippedData: json];
                 else
@@ -428,12 +434,12 @@ CBLStatus CBLStatusFromBulkDocsResponseItem(NSDictionary* item) {
     self.changesTotal++;
     [self asyncTaskStarted];
 
-    NSString* path = $sprintf(@"%@?new_edits=false", CBLEscapeID(rev.docID));
-    CBLMultipartUploader* uploader = [[CBLMultipartUploader alloc]
+    NSString* path = $sprintf(@"%@?new_edits=false", CBLEscapeURLParam(rev.docID));
+    __block CBLMultipartUploader* uploader = [[CBLMultipartUploader alloc]
                                   initWithURL: CBLAppendToURL(_remote, path)
                                      streamer: bodyStream
                                requestHeaders: self.requestHeaders
-                                 onCompletion: ^(CBLMultipartUploader* uploader, NSError *error) {
+                                 onCompletion: ^(CBLMultipartUploader* result, NSError *error) {
                   [self removeRemoteRequest: uploader];
                   if (error) {
                       if ($equal(error.domain, CBLHTTPErrorDomain)
@@ -456,8 +462,6 @@ CBLStatus CBLStatusFromBulkDocsResponseItem(NSDictionary* item) {
                   [self startNextUpload];
               }
      ];
-    uploader.timeoutInterval = self.requestTimeout;
-    uploader.authorizer = _authorizer;
     [self addRemoteRequest: uploader];
     LogTo(SyncVerbose, @"%@: Queuing %@ (multipart, %lldkb)", self, uploader, bodyStream.length/1024);
     if (!_uploaderQueue)
@@ -480,7 +484,7 @@ CBLStatus CBLStatusFromBulkDocsResponseItem(NSDictionary* item) {
     }
 
     [self asyncTaskStarted];
-    NSString* path = $sprintf(@"%@?new_edits=false", CBLEscapeID(rev.docID));
+    NSString* path = $sprintf(@"%@?new_edits=false", CBLEscapeURLParam(rev.docID));
     [self sendAsyncRequest: @"PUT"
                       path: path
                       body: rev.properties

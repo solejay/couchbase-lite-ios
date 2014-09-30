@@ -13,14 +13,11 @@
 
 
 /** Standard query options for views. */
-typedef struct CBLQueryOptions {
-    __unsafe_unretained id startKey;
-    __unsafe_unretained id endKey;
-    __unsafe_unretained NSString* startKeyDocID;
-    __unsafe_unretained NSString* endKeyDocID;
-    __unsafe_unretained NSArray* keys;
-    __unsafe_unretained NSString* fullTextQuery;
+@interface CBLQueryOptions : NSObject
+{
+@public
     const struct CBLGeoRect* bbox;
+    unsigned prefixMatchLevel;
     unsigned skip;
     unsigned limit;
     unsigned groupLevel;
@@ -29,6 +26,7 @@ typedef struct CBLQueryOptions {
     BOOL includeDocs;
     BOOL updateSeq;
     BOOL localSeq;
+    BOOL inclusiveStart;
     BOOL inclusiveEnd;
     BOOL reduceSpecified;
     BOOL reduce;                   // Ignore if !reduceSpecified
@@ -37,10 +35,20 @@ typedef struct CBLQueryOptions {
     BOOL fullTextRanking;
     CBLIndexUpdateMode indexUpdateMode;
     CBLAllDocsMode allDocsMode;
-} CBLQueryOptions;
+}
 
-extern const CBLQueryOptions kDefaultCBLQueryOptions;
+@property (copy, nonatomic) id startKey;
+@property (copy, nonatomic) id endKey;
+@property (copy, nonatomic) NSString* startKeyDocID;
+@property (copy, nonatomic) NSString* endKeyDocID;
+@property (copy, nonatomic) NSArray* keys;
+@property (copy, nonatomic) NSPredicate* filter;
+@property (copy, nonatomic) NSString* fullTextQuery;
 
+@end
+
+#define kCBLQueryOptionsDefaultLimit UINT_MAX
+extern NSString* const kCBLViewChangeNotification;
 
 typedef enum {
     kCBLViewCollationUnicode,
@@ -51,6 +59,8 @@ typedef enum {
 
 /** Returns YES if the data is meant as a placeholder for the doc's entire data (a "*") */
 BOOL CBLValueIsEntireDoc(NSData* valueData);
+
+BOOL CBLRowPassesFilter(CBLDatabase* db, CBLQueryRow* row, const CBLQueryOptions* options);
 
 
 @interface CBLView ()
@@ -67,6 +77,8 @@ BOOL CBLValueIsEntireDoc(NSData* valueData);
 - (void) databaseClosing;
 
 @property (readonly) int viewID;
+@property (readonly) NSUInteger totalRows;
+
 @end
 
 
@@ -101,7 +113,7 @@ BOOL CBLValueIsEntireDoc(NSData* valueData);
 /** Queries the view. Does NOT first update the index.
     @param options  The options to use.
     @return  An array of CBLQueryRow. */
-- (NSArray*) _queryWithOptions: (const CBLQueryOptions*)options
+- (NSArray*) _queryWithOptions: (CBLQueryOptions*)options
                         status: (CBLStatus*)outStatus;
 #if DEBUG
 - (NSArray*) dump;

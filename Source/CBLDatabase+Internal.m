@@ -16,6 +16,7 @@
 #import "CBLDatabase+Internal.h"
 #import "CBLDatabase+Attachments.h"
 #import "CBLInternal.h"
+#import "CBLModel_Internal.h"
 #import "CBL_Revision.h"
 #import "CBLDatabaseChange.h"
 #import "CBLCollateJSON.h"
@@ -52,8 +53,10 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
 #if 0
 + (void) initialize {
     if (self == [CBLDatabase class]) {
+        Log(@"SQLite version %s", sqlite3_libversion());
         int i = 0;
-        while (NULL != (const char *opt = sqlite3_compileoption_get(i++)))
+        const char* opt;
+        while (NULL != (opt = sqlite3_compileoption_get(i++)))
                Log(@"SQLite has option '%s'", opt);
     }
 }
@@ -124,13 +127,14 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
         _readOnly = readOnly;
         _fmdb = [[CBL_FMDatabase alloc] initWithPath: _path];
         _fmdb.dispatchQueue = manager.dispatchQueue;
-        _fmdb.busyRetryTimeout = kSQLiteBusyTimeout;
+        _fmdb.databaseLock = [_manager.shared lockForDatabaseNamed: name];
 #if DEBUG
         _fmdb.logsErrors = YES;
 #else
         _fmdb.logsErrors = WillLogTo(CBLDatabase);
 #endif
         _fmdb.traceExecution = WillLogTo(CBLDatabaseVerbose);
+
         _docIDs = [[NSCache alloc] init];
         _docIDs.countLimit = kDocIDCacheSize;
         _dispatchQueue = manager.dispatchQueue;
@@ -449,6 +453,34 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
             return NO;
         dbVersion = 12;
     }
+    
+    if (dbVersion < 13) {
+        // Version 13: Add rows to track number of rows in the views
+        NSString* sql = @"ALTER TABLE views ADD COLUMN total_docs INTEGER DEFAULT -1; \
+                          PRAGMA user_version = 13";
+        if (![self initialize: sql error: outError])
+            return NO;
+        dbVersion = 13;
+    }
+    
+    if (dbVersion < 14) {
+        // Version 14: Add index for getting a document with doc and rev id
+        NSString* sql = @"CREATE INDEX IF NOT EXISTS revs_by_docid_revid ON revs(doc_id, revid desc, current, deleted); \
+        PRAGMA user_version = 14";
+        if (![self initialize: sql error: outError])
+            return NO;
+        dbVersion = 14;
+    }
+
+    if (dbVersion < 15) {
+        // Version 15: Add sequence index on maps and attachments for revs(sequence) on DELETE CASCADE
+        NSString* sql = @"CREATE INDEX maps_sequence ON maps(sequence); \
+                          CREATE INDEX attachments_sequence ON attachments(sequence); \
+                          PRAGMA user_version = 15";
+        if (![self initialize: sql error: outError])
+            return NO;
+        dbVersion = 15;
+    }
 
     if (isNew && ![self initialize: @"END TRANSACTION" error: outError])
         return NO;
@@ -486,13 +518,18 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
     return YES;
 }
 
-- (BOOL) closeInternal {
+- (void) _close {
     if (!_isOpen)
-        return NO;
-    
+        return;
+
     LogTo(CBLDatabase, @"Closing <%p> %@", self, _path);
-    Assert(_transactionLevel == 0, @"Can't close database while %u transactions active",
-            _transactionLevel);
+
+    // Don't want any models trying to save themselves back to the db. (Generally there shouldn't
+    // be any, because the public -close: method saves changes first.)
+    for (CBLModel* model in _unsavedModelsMutable.copy)
+        model.needsSave = false;
+    _unsavedModelsMutable = nil;
+
     [[NSNotificationCenter defaultCenter] postNotificationName: CBL_DatabaseWillCloseNotification
                                                         object: self];
     [[NSNotificationCenter defaultCenter] removeObserver: self
@@ -510,11 +547,13 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
     
     _activeReplicators = nil;
     
-    if (![_fmdb close])
-        return NO;
+    [_fmdb close]; // this returns BOOL, but its implementation never returns NO
     _isOpen = NO;
-    _transactionLevel = 0;
-    return YES;
+
+    [[NSNotificationCenter defaultCenter] removeObserver: self];
+    [self _clearDocumentCache];
+    _modelFactory = nil;
+    [_manager _forgetDatabase: self];
 }
 
 
@@ -575,33 +614,24 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
 
 
 - (BOOL) beginTransaction {
-    if (![_fmdb executeUpdate: $sprintf(@"SAVEPOINT tdb%d", _transactionLevel + 1)]) {
-        Warn(@"Failed to create savepoint transaction!");
+    if (![_fmdb beginTransaction]) {
+        Warn(@"Failed to create SQLite transaction!");
         return NO;
     }
-    ++_transactionLevel;
-    LogTo(CBLDatabase, @"Begin transaction (level %d)...", _transactionLevel);
+    LogTo(CBLDatabase, @"Begin transaction (level %d)...", _fmdb.transactionLevel);
     return YES;
 }
 
 - (BOOL) endTransaction: (BOOL)commit {
-    Assert(_transactionLevel > 0);
-    BOOL ok = YES;
-    if (commit) {
-        LogTo(CBLDatabase, @"Commit transaction (level %d)", _transactionLevel);
-    } else {
-        LogTo(CBLDatabase, @"CANCEL transaction (level %d)", _transactionLevel);
-        if (![_fmdb executeUpdate: $sprintf(@"ROLLBACK TO tdb%d", _transactionLevel)]) {
-            Warn(@"Failed to rollback transaction!");
-            ok = NO;
-        }
+    LogTo(CBLDatabase, @"%@ transaction (level %d)",
+          (commit ? @"Commit" : @"Abort"), _fmdb.transactionLevel);
+
+    BOOL ok = [_fmdb endTransaction: commit];
+    if (!ok)
+        Warn(@"Failed to end transaction!");
+
+    if (!commit)
         [_changesToNotify removeAllObjects];
-    }
-    if (![_fmdb executeUpdate: $sprintf(@"RELEASE tdb%d", _transactionLevel)]) {
-        Warn(@"Failed to release transaction!");
-        ok = NO;
-    }
-    --_transactionLevel;
     [self postChangeNotifications];
     return ok;
 }
@@ -622,7 +652,7 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
         }
         if (status == kCBLStatusDBBusy) {
             // retry if locked out:
-            if (_transactionLevel > 1)
+            if (_fmdb.transactionLevel > 1)
                 break;
             if (++retries > kTransactionMaxRetries) {
                 Warn(@"%@: Db busy, too many retries, giving up", self);
@@ -658,7 +688,7 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
     // This is a 'while' instead of an 'if' because when we finish posting notifications, there
     // might be new ones that have arrived as a result of notification handlers making document
     // changes of their own (the replicator manager will do this.) So we need to check again.
-    while (_transactionLevel == 0 && _isOpen && !_postingChangeNotifications
+    while (_fmdb.transactionLevel == 0 && _isOpen && !_postingChangeNotifications
             && _changesToNotify.count > 0)
     {
         _postingChangeNotifications = true; // Disallow re-entrant calls
@@ -710,7 +740,7 @@ NSString* const CBL_DatabaseWillBeDeletedNotification = @"CBL_DatabaseWillBeDele
         } else if ([[n name] isEqualToString: CBL_DatabaseWillBeDeletedNotification]) {
             [self doAsync: ^{
                 LogTo(CBLDatabase, @"%@: Notified of deletion; closing", self);
-                [self closeForDeletion];
+                [self _close];
             }];
         }
     }
@@ -1430,23 +1460,24 @@ const CBLChangesOptions kDefaultCBLChangesOptions = {UINT_MAX, 0, NO, NO, YES};
 
 
 //FIX: This has a lot of code in common with -[CBLView queryWithOptions:status:]. Unify the two!
-- (NSArray*) getAllDocs: (const CBLQueryOptions*)options {
+- (NSArray*) getAllDocs: (CBLQueryOptions*)options {
     if (!options)
-        options = &kDefaultCBLQueryOptions;
+        options = [CBLQueryOptions new];
+    BOOL includeDocs = (options->includeDocs || options.filter);
     BOOL includeDeletedDocs = (options->allDocsMode == kCBLIncludeDeleted);
     
     // Generate the SELECT statement, based on the options:
     BOOL cacheQuery = YES;
     NSMutableString* sql = [@"SELECT revs.doc_id, docid, revid, sequence" mutableCopy];
-    if (options->includeDocs)
-        [sql appendString: @", json"];
+    if (includeDocs)
+        [sql appendString: @", json, no_attachments"];
     if (includeDeletedDocs)
         [sql appendString: @", deleted"];
     [sql appendString: @" FROM revs, docs WHERE"];
-    if (options->keys) {
-        if (options->keys.count == 0)
+    if (options.keys) {
+        if (options.keys.count == 0)
             return @[];
-        [sql appendFormat: @" revs.doc_id IN (SELECT doc_id FROM docs WHERE docid IN (%@)) AND", [CBLDatabase joinQuotedStrings: options->keys]];
+        [sql appendFormat: @" revs.doc_id IN (SELECT doc_id FROM docs WHERE docid IN (%@)) AND", [CBLDatabase joinQuotedStrings: options.keys]];
         cacheQuery = NO; // we've put hardcoded key strings in the query
     }
     [sql appendString: @" docs.doc_id = revs.doc_id AND current=1"];
@@ -1454,11 +1485,11 @@ const CBLChangesOptions kDefaultCBLChangesOptions = {UINT_MAX, 0, NO, NO, YES};
         [sql appendString: @" AND deleted=0"];
 
     NSMutableArray* args = $marray();
-    id minKey = options->startKey, maxKey = options->endKey;
+    id minKey = options.startKey, maxKey = options.endKey;
     BOOL inclusiveMin = YES, inclusiveMax = options->inclusiveEnd;
     if (options->descending) {
         minKey = maxKey;
-        maxKey = options->startKey;
+        maxKey = options.startKey;
         inclusiveMin = inclusiveMax;
         inclusiveMax = YES;
     }
@@ -1489,7 +1520,7 @@ const CBLChangesOptions kDefaultCBLChangesOptions = {UINT_MAX, 0, NO, NO, YES};
         return nil;
     
     NSMutableArray* rows = $marray();
-    NSMutableDictionary* docs = options->keys ? $mdict() : nil;
+    NSMutableDictionary* docs = options.keys ? $mdict() : nil;
 
     BOOL keepGoing = [r next]; // Go to first result row
     while (keepGoing) {
@@ -1502,15 +1533,18 @@ const CBLChangesOptions kDefaultCBLChangesOptions = {UINT_MAX, 0, NO, NO, YES};
             BOOL deleted = includeDeletedDocs && [r boolForColumn: @"deleted"];
 
             NSDictionary* docContents = nil;
-            if (options->includeDocs) {
+            if (includeDocs) {
                 // Fill in the document contents:
                 NSData* json = [r dataNoCopyForColumnIndex: 4];
+                CBLContentOptions contentOptions = options->content;
+                if ([r boolForColumnIndex: 5])
+                    contentOptions |= kCBLNoAttachments; // doc has no attachments
                 docContents = [self documentPropertiesFromJSON: json
                                                          docID: docID
                                                          revID: revID
                                                        deleted: deleted
                                                       sequence: sequence
-                                                       options: options->content];
+                                                       options: contentOptions];
                 Assert(docContents);
             }
             
@@ -1535,17 +1569,17 @@ const CBLChangesOptions kDefaultCBLChangesOptions = {UINT_MAX, 0, NO, NO, YES};
                                                               key: docID
                                                             value: value
                                                     docProperties: docContents];
-            if (options->keys)
+            if (options.keys)
                 docs[docID] = row;
-            else
+            else if (CBLRowPassesFilter(self, row, options))
                 [rows addObject: row];
         }
     }
     [r close];
 
     // If given doc IDs, sort the output into that order, and add entries for missing docs:
-    if (options->keys) {
-        for (NSString* docID in options->keys) {
+    if (options.keys) {
+        for (NSString* docID in options.keys) {
             CBLQueryRow* change = docs[docID];
             if (!change) {
                 NSDictionary* value = nil;
@@ -1564,11 +1598,29 @@ const CBLChangesOptions kDefaultCBLChangesOptions = {UINT_MAX, 0, NO, NO, YES};
                                                       value: value
                                               docProperties: nil];
             }
-            [rows addObject: change];
+            if (CBLRowPassesFilter(self, change, options))
+                [rows addObject: change];
         }
     }
 
     return rows;
+}
+
+- (void) postNotification: (NSNotification*)notification
+{
+    if (_dispatchQueue) {
+        // NSNotificationQueue is runloop-based, doesn't work on dispatch queues. (#364)
+        [self doAsync:^{
+            [[NSNotificationCenter defaultCenter] postNotification: notification];
+        }];
+    } else {
+        NSNotificationQueue* queue = [NSNotificationQueue defaultQueue];
+        [queue enqueueNotification: notification
+                      postingStyle: NSPostASAP
+                      coalesceMask: NSNotificationNoCoalescing
+                          forModes: @[NSRunLoopCommonModes]];
+    }
+
 }
 
 
