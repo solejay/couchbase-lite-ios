@@ -18,13 +18,16 @@
 #import "CBLView+Internal.h"
 #import "CBLDatabase.h"
 #import "CBL_Server.h"
+#import "CBLMisc.h"
 #import "MYBlockUtils.h"
+
+static NSString* keyPathForQueryRow(NSString* keyPath);
 
 
 // Querying utilities for CBLDatabase. Defined down below.
 @interface CBLDatabase (Views)
 - (NSArray*) queryViewNamed: (NSString*)viewName
-                    options: (CBLQueryOptions)options
+                    options: (CBLQueryOptions*)options
                lastSequence: (SequenceNumber*)outLastSequence
                      status: (CBLStatus*)outStatus;
 @end
@@ -41,18 +44,19 @@
 @implementation CBLQuery
 {
     CBLDatabase* _database;
-    CBLView* _view;              // nil for _all_docs query
     BOOL _temporaryView;
     NSUInteger _limit, _skip;
     id _startKey, _endKey;
     NSString* _startKeyDocID;
     NSString* _endKeyDocID;
     CBLIndexUpdateMode _indexUpdateMode;
-    BOOL _descending, _prefetch, _mapOnly;
+    BOOL _descending, _inclusiveStart, _inclusiveEnd, _prefetch, _mapOnly;
     CBLAllDocsMode _allDocsMode;
     NSArray *_keys;
-    NSUInteger _groupLevel;
+    NSUInteger _prefixMatchLevel, _groupLevel;
     SInt64 _lastSequence;       // The db's lastSequence the last time -rows was called
+    
+    @protected CBLView* _view;              // nil for _all_docs query
 }
 
 
@@ -62,8 +66,9 @@
     if (self) {
         _database = database;
         _view = view;
-        _limit = kDefaultCBLQueryOptions.limit;  // this has a nonzero default (UINT_MAX)
-        _fullTextRanking = kDefaultCBLQueryOptions.fullTextRanking; // defaults to YES
+        _inclusiveStart = _inclusiveEnd = YES;
+        _limit = kCBLQueryOptionsDefaultLimit;
+        _fullTextRanking = YES;
         _mapOnly = (view.reduceBlock == nil);
     }
     return self;
@@ -74,6 +79,7 @@
     CBLView* view = [database makeAnonymousView];
     if (self = [self initWithDatabase: database view: view]) {
         _temporaryView = YES;
+        _inclusiveStart = _inclusiveEnd = YES;
         [view setMapBlock: mapBlock reduceBlock: nil version: @""];
     }
     return self;
@@ -87,9 +93,14 @@
         _skip = query.skip;
         self.startKey = query.startKey;
         self.endKey = query.endKey;
+        _inclusiveStart = query.inclusiveStart;
+        _inclusiveEnd = query.inclusiveEnd;
+        _prefixMatchLevel = query.prefixMatchLevel;
         _descending = query.descending;
         _prefetch = query.prefetch;
         self.keys = query.keys;
+        self.sortDescriptors = query.sortDescriptors;
+        self.postFilter = query.postFilter;
         if (query->_isGeoQuery) {
             _isGeoQuery = YES;
             _boundingBox = query->_boundingBox;
@@ -119,36 +130,67 @@
 @synthesize  limit=_limit, skip=_skip, descending=_descending, startKey=_startKey, endKey=_endKey,
             prefetch=_prefetch, keys=_keys, groupLevel=_groupLevel, startKeyDocID=_startKeyDocID,
             endKeyDocID=_endKeyDocID, indexUpdateMode=_indexUpdateMode, mapOnly=_mapOnly,
-            database=_database, allDocsMode=_allDocsMode;
+            database=_database, allDocsMode=_allDocsMode, sortDescriptors=_sortDescriptors,
+            inclusiveStart=_inclusiveStart, inclusiveEnd=_inclusiveEnd, postFilter=_postFilter,
+            prefixMatchLevel=_prefixMatchLevel;
+
+
+- (NSString*) description {
+    NSMutableString *desc = [NSMutableString stringWithFormat: @"%@[%@",
+                             [self class], (_view ? _view.name : @"AllDocs")];
+#if DEBUG
+    if (_startKey)
+        [desc appendFormat: @", start=%@", CBLJSONString(_startKey)];
+    if (_endKey)
+        [desc appendFormat: @", end=%@", CBLJSONString(_endKey)];
+    if (_keys)
+        [desc appendFormat: @", keys=[..%lu keys...]", (unsigned long)_keys.count];
+    if (_skip)
+        [desc appendFormat: @", skip=%lu", (unsigned long)_skip];
+    if (_descending)
+        [desc appendFormat: @", descending"];
+    if (_limit != UINT_MAX)
+        [desc appendFormat: @", limit=%lu", (unsigned long)_limit];
+    if (_groupLevel)
+        [desc appendFormat: @", groupLevel=%lu", (unsigned long)_groupLevel];
+    if (_mapOnly)
+        [desc appendFormat: @", mapOnly=YES"];
+    if (_allDocsMode)
+        [desc appendFormat: @", allDocsMode=%d", _allDocsMode];
+#endif
+    [desc appendString: @"]"];
+    return desc;
+}
 
 
 - (CBLLiveQuery*) asLiveQuery {
     return [[CBLLiveQuery alloc] initWithQuery: self];
 }
 
-- (CBLQueryOptions) queryOptions {
-    return (CBLQueryOptions) {
-        .startKey = _startKey,
-        .endKey = _endKey,
-        .startKeyDocID = _startKeyDocID,
-        .endKeyDocID = _endKeyDocID,
-        .keys = _keys,
-        .fullTextQuery = _fullTextQuery,
-        .fullTextSnippets = _fullTextSnippets,
-        .fullTextRanking = _fullTextRanking,
-        .bbox = (_isGeoQuery ? &_boundingBox : NULL),
-        .skip = (unsigned)_skip,
-        .limit = (unsigned)_limit,
-        .reduce = !_mapOnly,
-        .reduceSpecified = YES,
-        .groupLevel = (unsigned)_groupLevel,
-        .descending = _descending,
-        .includeDocs = _prefetch,
-        .updateSeq = YES,
-        .inclusiveEnd = YES,
-        .allDocsMode = _allDocsMode,
-        .indexUpdateMode = _indexUpdateMode
-    };
+- (CBLQueryOptions*) queryOptions {
+    CBLQueryOptions* options = [CBLQueryOptions new];
+    options.startKey = _startKey,
+    options.endKey = _endKey,
+    options.startKeyDocID = _startKeyDocID,
+    options.endKeyDocID = _endKeyDocID,
+    options.keys = _keys,
+    options.fullTextQuery = _fullTextQuery,
+    options->fullTextSnippets = _fullTextSnippets,
+    options->fullTextRanking = _fullTextRanking,
+    options->bbox = (_isGeoQuery ? &_boundingBox : NULL),
+    options->skip = (unsigned)_skip,
+    options->limit = (unsigned)_limit,
+    options->reduce = !_mapOnly,
+    options->reduceSpecified = YES,
+    options->groupLevel = (unsigned)_groupLevel,
+    options->descending = _descending,
+    options->includeDocs = _prefetch,
+    options->updateSeq = YES,
+    options->inclusiveEnd = YES,
+    options->allDocsMode = _allDocsMode,
+    options->indexUpdateMode = _indexUpdateMode;
+    options.filter = _postFilter;
+    return options;
 }
 
 
@@ -163,16 +205,19 @@
             *outError = CBLStatusToNSError(status, nil);
         return nil;
     }
-    return [[CBLQueryEnumerator alloc] initWithDatabase: _database
-                                                   rows: rows
-                                         sequenceNumber: _lastSequence];
+    CBLQueryEnumerator* result = [[CBLQueryEnumerator alloc] initWithDatabase: _database
+                                                                         rows: rows
+                                                               sequenceNumber: _lastSequence];
+    if (_sortDescriptors)
+        [result sortUsingDescriptors: _sortDescriptors];
+    return result;
 }
 
 
 - (void) runAsync: (void (^)(CBLQueryEnumerator*, NSError*))onComplete {
     LogTo(Query, @"%@: Async query %@/%@...", self, _database.name, (_view.name ?: @"_all_docs"));
     NSString* viewName = _view.name;
-    CBLQueryOptions options = self.queryOptions;
+    CBLQueryOptions *options = self.queryOptions;
     
     [_database.manager backgroundTellDatabaseNamed: _database.name to: ^(CBLDatabase *bgdb) {
         // On the background server thread, run the query:
@@ -189,10 +234,13 @@
             CBLQueryEnumerator* e = nil;
             if (CBLStatusIsError(status))
                 error = CBLStatusToNSError(status, nil);
-            else
+            else {
                 e = [[CBLQueryEnumerator alloc] initWithDatabase: _database
                                                             rows: rows
                                                   sequenceNumber: lastSequence];
+                if (_sortDescriptors)
+                    [e sortUsingDescriptors: _sortDescriptors];
+            }
             onComplete(e, error);
         }];
     }];
@@ -226,6 +274,14 @@
                                                  selector: @selector(databaseChanged)
                                                      name: kCBLDatabaseChangeNotification 
                                                    object: self.database];
+        
+        //view can be null for _all_docs query
+        if (_view) {
+            [[NSNotificationCenter defaultCenter] addObserver: self
+                                                     selector: @selector(databaseChanged)
+                                                         name: kCBLViewChangeNotification
+                                                       object: _view];
+        }
         [self update];
     }
 }
@@ -237,6 +293,13 @@
         [[NSNotificationCenter defaultCenter] removeObserver: self
                                                         name: kCBLDatabaseChangeNotification
                                                       object: self.database];
+        
+        //view can be null for _all_docs query
+        if (_view) {
+            [[NSNotificationCenter defaultCenter] removeObserver: self
+                                                            name: kCBLViewChangeNotification
+                                                          object: _view];
+        }
     }
     if (_willUpdate) {
         _willUpdate = NO;
@@ -366,6 +429,29 @@
         return NO;
     CBLQueryEnumerator* otherEnum = object;
     return [otherEnum->_rows isEqual: _rows];
+}
+
+
+- (void) sortUsingDescriptors: (NSArray*)sortDescriptors {
+    // First make the key-paths relative to each row's value unless they start from a root key:
+    sortDescriptors = [sortDescriptors my_map: ^id(NSSortDescriptor* desc) {
+        NSString* keyPath = desc.key;
+        NSString* newKeyPath = keyPathForQueryRow(keyPath);
+        Assert(newKeyPath, @"Invalid CBLQueryRow key path \"%@\"", keyPath);
+        if (newKeyPath == keyPath)
+            return desc;
+        else if (desc.comparator)
+            return [[NSSortDescriptor alloc] initWithKey: newKeyPath
+                                               ascending: desc.ascending
+                                              comparator: desc.comparator];
+        else
+            return [[NSSortDescriptor alloc] initWithKey: newKeyPath
+                                               ascending: desc.ascending
+                                                selector: desc.selector];
+    }];
+
+    // Now the sorting is trivial:
+    _rows = [_rows sortedArrayUsingDescriptors: sortDescriptors];
 }
 
 
@@ -542,6 +628,10 @@ static inline BOOL isNonMagicValue(id value) {
 }
 
 
+// Custom key & value indexing properties. These are used by the extended "key[0]" / "value[2]"
+// key-path syntax (see keyPathForQueryRow(), below.) They're also useful when creating Cocoa
+// bindings to query rows, on Mac OS X.
+
 - (id) keyAtIndex: (NSUInteger)index {
     id key = self.key;
     if ([key isKindOfClass:[NSArray class]])
@@ -554,6 +644,19 @@ static inline BOOL isNonMagicValue(id value) {
 - (id) key1                         {return [self keyAtIndex: 1];}
 - (id) key2                         {return [self keyAtIndex: 2];}
 - (id) key3                         {return [self keyAtIndex: 3];}
+
+- (id) valueAtIndex: (NSUInteger)index {
+    id value = self.value;
+    if ([value isKindOfClass:[NSArray class]])
+        return (index < [value count]) ? value[index] : nil;
+    else
+        return (index == 0) ? value : nil;
+}
+
+- (id) value0                         {return [self valueAtIndex: 0];}
+- (id) value1                         {return [self valueAtIndex: 1];}
+- (id) value2                         {return [self valueAtIndex: 2];}
+- (id) value3                         {return [self valueAtIndex: 3];}
 
 
 - (CBLDocument*) document {
@@ -614,7 +717,7 @@ static inline BOOL isNonMagicValue(id value) {
 @implementation CBLDatabase (Views)
 
 - (NSArray*) queryViewNamed: (NSString*)viewName
-                    options: (CBLQueryOptions)options
+                    options: (CBLQueryOptions*)options
                lastSequence: (SequenceNumber*)outLastSequence
                      status: (CBLStatus*)outStatus
 {
@@ -629,23 +732,23 @@ static inline BOOL isNonMagicValue(id value) {
                 break;
             }
             lastSequence = view.lastSequenceIndexed;
-            if (options.indexUpdateMode == kCBLUpdateIndexBefore || lastSequence <= 0) {
+            if (options->indexUpdateMode == kCBLUpdateIndexBefore || lastSequence <= 0) {
                 status = [view updateIndex];
                 if (CBLStatusIsError(status)) {
                     Warn(@"Failed to update view index: %d", status);
                     break;
                 }
                 lastSequence = view.lastSequenceIndexed;
-            } else if (options.indexUpdateMode == kCBLUpdateIndexAfter &&
+            } else if (options->indexUpdateMode == kCBLUpdateIndexAfter &&
                        lastSequence < self.lastSequenceNumber) {
                 [self doAsync: ^{
                     [view updateIndex];
                 }];
             }
-            rows = [view _queryWithOptions: &options status: &status];
+            rows = [view _queryWithOptions: options status: &status];
         } else {
             // nil view means query _all_docs
-            rows = [self getAllDocs: &options];
+            rows = [self getAllDocs: options];
             status = rows ? kCBLStatusOK :self.lastDbError; //FIX: getALlDocs should return status
             lastSequence = self.lastSequenceNumber;
         }
@@ -659,3 +762,44 @@ static inline BOOL isNonMagicValue(id value) {
 }
 
 @end
+
+
+
+// Tweaks a key-path for use with a CBLQueryRow. The "key" and "value" properties can be
+// indexed as arrays using a syntax like "key[0]". (Yes, this is a hack.)
+static NSString* keyPathForQueryRow(NSString* keyPath) {
+    NSRange bracket = [keyPath rangeOfString: @"["];
+    if (bracket.length == 0)
+        return keyPath;
+    if (![keyPath hasPrefix: @"key["] && ![keyPath hasPrefix: @"value["])
+        return nil;
+    NSUInteger indexPos = NSMaxRange(bracket);
+    if (keyPath.length < indexPos+2 || [keyPath characterAtIndex: indexPos+1] != ']')
+        return nil;
+    unichar ch = [keyPath characterAtIndex: indexPos];
+    if (!isdigit(ch))
+        return nil;
+    // Delete the brackets, e.g. turning "value[1]" into "value1". CBLQueryRow
+    // just so happens to have custom properties key0..key3 and value0..value3.
+    NSMutableString* newKey = [keyPath mutableCopy];
+    [newKey deleteCharactersInRange: NSMakeRange(indexPos+1, 1)]; // delete ']'
+    [newKey deleteCharactersInRange: NSMakeRange(indexPos-1, 1)]; // delete '['
+    return newKey;
+}
+
+
+TestCase(CBLQuery_KeyPathForQueryRow) {
+    AssertEqual(keyPathForQueryRow(@"value"),           @"value");
+    AssertEqual(keyPathForQueryRow(@"value.foo"),       @"value.foo");
+    AssertEqual(keyPathForQueryRow(@"value[0]"),        @"value0");
+    AssertEqual(keyPathForQueryRow(@"key[3].foo"),      @"key3.foo");
+    AssertEqual(keyPathForQueryRow(@"value[0].foo"),    @"value0.foo");
+    AssertEqual(keyPathForQueryRow(@"[2]"),             nil);
+    AssertEqual(keyPathForQueryRow(@"sequence[2]"),     nil);
+    AssertEqual(keyPathForQueryRow(@"value.addresses[2]"),nil);
+    AssertEqual(keyPathForQueryRow(@"value["),          nil);
+    AssertEqual(keyPathForQueryRow(@"value[0"),         nil);
+    AssertEqual(keyPathForQueryRow(@"value[0"),         nil);
+    AssertEqual(keyPathForQueryRow(@"value[0}"),        nil);
+    AssertEqual(keyPathForQueryRow(@"value[d]"),        nil);
+}

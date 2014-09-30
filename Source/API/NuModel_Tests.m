@@ -14,7 +14,7 @@
 #import "CBLInternal.h"
 #import "CouchbaseLitePrivate.h"
 #import "CBLJSON.h"
-#import "CBLCanonicalJSON.h"
+#import "CBJSONEncoder.h"
 
 
 #if DEBUG
@@ -25,6 +25,9 @@ static CBLDatabase* createEmptyDB(void) {
     CBLDatabase* db = [[CBLManager sharedInstance] createEmptyDatabaseNamed: @"numodel_test_db"
                                                                       error: &error];
     CAssert(db, @"Couldn't create test_db: %@", error);
+    AfterThisTest(^{
+        [db _close];
+    });
     return db;
 }
 
@@ -80,7 +83,7 @@ CBLSynthesize(readOnly);
 
 
 static NSString* jsonString(id obj) {
-    return [CBLCanonicalJSON canonicalString: obj];
+    return [[CBJSONEncoder canonicalEncoding: obj error: NULL] my_UTF8ToString];
 }
 
 static NSDictionary* dirtyProperties(CBLObject* m) {
@@ -273,8 +276,6 @@ TestCase(CBLQueryRowModel) {
         ++rowCount;
     }
     AssertEq(rowCount, 1);
-
-    CAssert([db close]);
 }
 
 

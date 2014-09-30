@@ -147,7 +147,7 @@ TestCase(CBLIncrementalStoreCRUD)
     doc = [database documentWithID:[objectID couchbaseLiteIDRepresentation]];
     Assert([doc isDeleted], @"Document not marked as deleted after deletion");
 
-    Assert([database close]);
+    [database _close];
 }
 
 #pragma mark - TestCase CBLIncrementalStoreCBLIntegration
@@ -245,7 +245,7 @@ TestCase(CBLIncrementalStoreCBLIntegration)
     AssertEqual(entry.check, [entryProperties objectForKey:@"check"]);
     AssertEqual(entry.number, [entryProperties objectForKey:@"number"]);
 
-    Assert([database close]);
+    [database _close];
 }
 
 #pragma mark - TestCase CBLIncrementalStoreCreateAndUpdate
@@ -307,8 +307,10 @@ TestCase(CBLIncrementalStoreCreateAndUpdate)
     AssertEq(entry.subentries.count, (unsigned int)1);
     AssertEqual([entry.subentries valueForKeyPath:@"text"], [NSSet setWithObject:@"Subentry abc"]);
     AssertEqual([entry.subentries valueForKeyPath:@"number"], [NSSet setWithObject:@123]);
+    
+    Assert([entry.decimalNumber isKindOfClass:[NSDecimalNumber class]], @"decimalNumber must be with type NSDecimalNumber");
 
-    Assert([store.database close]);
+    [store.database _close];
 }
 
 #pragma mark - TestCase CBLIncrementalStoreFetchrequest
@@ -408,7 +410,7 @@ TestCase(CBLIncrementalStoreFetchrequest)
     Assert(result.count == count, @"Fetch request should return same result count as number fetch");
     Assert([result[0] isKindOfClass:[NSManagedObject class]], @"Results are not NSManagedObjects");
 
-    Assert([store.database close]);
+    [store.database _close];
 }
 
 #pragma mark - TestCase CBLIncrementalStoreAttachments
@@ -488,7 +490,7 @@ TestCase(CBLIncrementalStoreAttachments)
     NSString *stringFromContent = [[NSString alloc] initWithData:content encoding:NSUTF8StringEncoding];
     Assert([stringFromContent hasPrefix:@"Updated."], @"Not updated");
 
-    Assert([database close]);
+    [database _close];
 }
 
 #pragma mark - TestCase CBLIncrementalStoreFetchWithPredicates
@@ -710,7 +712,7 @@ TestCase(CBLIncrementalStoreFetchWithPredicates)
         AssertEqual(numbers[0], entry2[@"number"]);
     });
 
-    Assert([store.database close]);
+    [store.database _close];
 }
 
 #pragma mark -
