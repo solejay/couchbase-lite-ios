@@ -243,4 +243,11 @@ extern const CBLChangesOptions kDefaultCBLChangesOptions;
  (issue #364). */
 - (void) postNotification: (NSNotification*)notification;
 
+/** Create a local checkpoint document mainly used when replacing the database. The local checkpoint
+ contains current localUUID (aka privateUUID) of the database. */
+
+- (BOOL) createLocalCheckpointDocument;
+
+- (NSDictionary*) getLocalCheckpointDocument;
+
 @end
